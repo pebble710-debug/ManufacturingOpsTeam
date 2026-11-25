@@ -1,24 +1,33 @@
 # Permissions Matrix (v1 core)
 
-**DRAFT — pending security-reviewer (Sasha) review.**
-**Task:** T-004 · **Owner:** Priya (product-manager) · **Date:** 2026-11-25
-**Sources:** user decisions 5 and 7 (2026-11-25), [project-scope.md](../project-scope.md) §2, §3.5, §5, [07-software-design.md](../07-software-design.md) §7.2, [04](../04-shipping-workflows-coordination.md) §4.2.
+**REVIEWED — product-manager (Priya) + security-reviewer (Sasha), 2026-11-25**
+**Tasks:** T-004 (draft, Priya) · T-015 (security review, Sasha) · **Date:** 2026-11-25
+**Sources:** user decisions 5 and 7 (2026-11-25), [project-scope.md](../project-scope.md) §2, §3.5, §5, [07-software-design.md](../07-software-design.md) §7.2, [04](../04-shipping-workflows-coordination.md) §4.2, [ADR-001](../ADR-001.md) §8, [PoC report](../poc/poc-report.md) R-1.
+**Companion docs:** [security/security-plan.md](../security/security-plan.md) (controls and tests), [security/threat-model.md](../security/threat-model.md).
 All users, names and data are **fictional**.
 
 ## 1. How to read this
 
-- **Y** = allowed. Blank = not allowed: the server returns **HTTP 403** (signed in) or **401/redirect** (not signed in). A 403 also writes an access-denied audit entry.
+- **Y** = allowed. Blank = not allowed: the server returns **HTTP 403** (signed in) or **401/redirect** (not signed in). A 403 for a signed-in user also writes an access-denied audit entry.
 - **Y\*** = allowed with a special rule (section 3).
-- **Deny by default:** any action not listed here is refused for every role.
+- **Deny by default:** any action not listed here is refused for every role, including any new route that has no permission entry yet.
 - Enforcement is **server-side in every handler**. Hiding a button is never the protection. Direct requests (bypassing the UI) are tested (US-080).
-- Status or state conflicts (for example shipping a shipment that is not Verified) return **409**, not 403. A role or identity refusal (including verifier = packer) returns **403** [P: error code `VERIFIER_SAME_AS_PACKER`; Diego/Marcus to confirm in the API contract].
-- Roles: Admin, Supervisor, Shipping, Receiving, Quality; **Viewer is optional** (recommended: keep it as a read-only guest login for the public site; dropping it changes no story).
+- **One role per user.** A user has exactly one role in v1; permissions are never combined (R-11).
+- **Response codes, checked in this order** [P; Diego/Marcus confirm in the API contract]:
+  1. not signed in → **401** (API) or redirect to `/login` (pages);
+  2. missing/wrong CSRF token → **403** (`CSRF_INVALID`); wrong or missing `Content-Type` → **415**;
+  3. role not allowed for the action → **403** (`FORBIDDEN_ROLE`);
+  4. invalid input → **400/422** (Zod field errors);
+  5. identity rule refused (verifier = packer, approver = counter) → **403** (`VERIFIER_SAME_AS_PACKER`, `APPROVER_SAME_AS_COUNTER`);
+  6. status or state conflict (for example shipping a shipment that is not Verified) → **409**;
+  7. too many attempts (login, demo reset) → **429**.
+- Roles: Admin, Supervisor, Shipping, Receiving, Quality, plus **Viewer**: a read-only guest role, **kept and seeded** (7th demo user). It is the recommended login for visitors to the public demo site. Viewer is not an operational role; removing it later changes no story.
 - Cross-references: story IDs are in [backlog.md](backlog.md).
 
 ## 2. Matrix
 
-| ID | Action | Admin | Supervisor | Shipping | Receiving | Quality | Viewer (opt.) | Story |
-|----|--------|:-----:|:----------:|:--------:|:---------:|:-------:|:-------------:|-------|
+| ID | Action | Admin | Supervisor | Shipping | Receiving | Quality | Viewer | Story |
+|----|--------|:-----:|:----------:|:--------:|:---------:|:-------:|:------:|-------|
 | P-01 | Sign in / sign out | Y | Y | Y | Y | Y | Y | US-001 |
 | P-02 | View dashboard, KPI tiles, charts (incl. fixed reporting date label) | Y | Y | Y | Y | Y | Y | US-054 |
 | P-03 | View shipments, packaging errors, rework, inventory, lot trace, reports; CSV export | Y | Y | Y | Y | Y | Y | US-024, US-065 |
@@ -30,7 +39,7 @@ All users, names and data are **fictional**.
 | P-09 | Put shipment On Hold (reason required) | | Y | Y | | Y | | US-016 |
 | P-10 | Release shipment from hold | | Y | | | Y | | US-016 |
 | P-11 | Cancel shipment (reason required; before Shipped) | | Y | Y\* | | | | US-016 |
-| P-12 | Log packaging error (before or after ship) | | Y | Y | | Y | | US-027 |
+| P-12 | Log packaging error (before or after ship) | | Y | Y\* | | Y | | US-027 |
 | P-13 | Log rework event | | Y | Y | | Y | | US-029 |
 | P-14 | Edit root cause (6M), 5 Whys, corrective action; close error | | Y | | | Y | | US-032 |
 | P-15 | Receive material (receipt with lot and inspection status) | | Y | | Y | | | US-035 |
@@ -41,64 +50,88 @@ All users, names and data are **fictional**.
 | P-20 | Manage lookups (parts, customers, suppliers, carriers, locations, reason codes) | Y | Y | | | | | US-007 |
 | P-21 | Edit KPI targets and cycle-count tolerances | Y | Y | | | | | US-008 |
 | P-22 | Set fixed reporting date or switch to live date | Y | | | | | | US-008 |
-| P-23 | Manage users (create, deactivate, change role) — **screen deferred to v1.1; rule fixed now** | Y | | | | | | US-004 (deferred) |
-| P-24 | View audit log | Y | | | | | | US-005 |
-| P-25 | Demo-data reset (env-gated; confirmation required; audited) | Y | | | | | | US-011 |
+| P-23 | Manage users (create, deactivate, change role) — **screen deferred to v1.1; rule fixed now** | Y\* | | | | | | US-004 (deferred) |
+| P-24 | View audit log (read-only) | Y | | | | | | US-005 |
+| P-25 | Demo-data reset (env-gated; confirmation; cooldown; audited) | Y\* | | | | | | US-011 |
 
 ## 3. Special rules
 
 | Rule | Statement | Notes / tests |
 |------|-----------|---------------|
-| **R-1 Verifier ≠ packer** (user decision 5) | Shipping, Quality and Supervisor may verify, but the verifier must be a different person from the **current packer** of that shipment. The server compares the signed-in user id with the recorded packer id. | Enforced for UI and direct requests; a refused attempt records no passed verification. After a rework, the **new** packer is the current packer: the earlier packer may verify, the new one may not (US-020). Applies to Supervisor too (a Supervisor who packed cannot verify). |
-| **R-2 Admin is not an operator** | Admin cannot pack, verify, ship, log errors or rework, receive, transfer, count or approve. Admin may view everything and runs configuration (lookups, targets, reporting date), users, audit log and demo reset. | Justification: separation of duties. An administrator who can also ship or verify could create and approve their own records, which defeats the second-person check and the audit trail. In a small plant a Supervisor covers both. Sasha to confirm. |
-| **R-3 Supervisor approvals** | Only a Supervisor approves a cycle count and posts the adjustment; adjustments exist only through an approved count in v1 core (stand-alone manual adjustment is deferred, US-040). | Shipping, Receiving, Quality, Admin get 403. |
-| **R-4 Approver ≠ counter** [P, not yet a story criterion] | A Supervisor may not approve a count they entered themselves. | Proposed for Sasha; adds one server check and one test. If approved, add to US-044. |
-| **R-5 Shipping cancels only early** | Shipping may cancel only while the shipment is Planned or Ready to Pack; Supervisor may cancel at any status before Shipped. Cancelled shipments leave every KPI. | Limits KPI manipulation. Changes the earlier US-017 text (Shipping or Supervisor, any pre-ship status). |
-| **R-6 Hold release** | Shipping can put a shipment on hold but only Quality or Supervisor can release it. | From earlier backlog matrix ("request hold"). |
-| **R-7 Moving stock out of a Hold location** | Receiving may transfer or scrap stock, but a transfer **out of** a Hold location (releasing held material) needs Quality or Supervisor. | Replaces the deferred release/reject screen (US-036). Receiving gets 403 on that transfer (marked Y\* in P-16). |
-| **R-8 Customer-found errors** | After-ship errors are logged against Shipped shipments by Quality or Supervisor only; Shipping logs before-ship errors. | Matches US-033 (merged into US-027). P-12 for Shipping applies to before-ship errors. |
-| **R-9 Reporting date and reset** | Only Admin sets the reporting date and runs the demo reset. Reset requires `DEMO_RESET_ENABLED=true`, an explicit confirmation, and writes an audit entry before the data is cleared. | The reset endpoint is disabled by default on previews and production unless set. Sasha to review exposure (public site). |
+| **R-1 Verifier ≠ packer** (user decision 5) | Shipping, Quality and Supervisor may verify, but the verifier must be a different person from the **current packer** of that shipment. The server compares the signed-in user id (from the session, never from the request body) with the recorded packer id **inside the verify transaction** (conditional `UPDATE … WHERE packer_id <> $me`, or a row lock), so two concurrent requests cannot bypass it. | Enforced for UI and direct requests; a refused attempt records no passed or failed verification (403, audited). After a rework, the **new** packer is the current packer: the earlier packer may verify, the new one may not (US-020). Applies to Supervisor too (a Supervisor who packed cannot verify). T-1 to T-5. |
+| **R-2 Admin is not an operator** — **confirmed** | Admin cannot pack, verify, ship, hold, cancel, log errors or rework, receive, transfer, count or approve. Admin may view everything and runs configuration (lookups, targets, reporting date), users, audit log and demo reset. | Separation of duties: the person who controls accounts and reads the audit trail should not also create the operational records being audited. With R-11 (one role per user, no self role change) an Admin cannot quietly turn themselves into a verifier. In a small plant a Supervisor covers both. T-6. |
+| **R-3 Supervisor approvals** | Only a Supervisor approves a cycle count and posts the adjustment; adjustments exist only through an approved count in v1 core (stand-alone manual adjustment is deferred, US-040). | Shipping, Receiving, Quality, Admin, Viewer get 403. T-7, T-8. |
+| **R-4 Approver ≠ counter** — **accepted into v1 core** | A Supervisor may not approve a count if they entered or recounted **any line** of that count. | Same pattern as R-1 (one server check in the approve transaction, one test). Seed: counts are entered by `demo.receiver`, so `demo.supervisor` can approve them in the demo. Priya adds the criterion to US-044. T-15. |
+| **R-5 Shipping cancels only early** | Shipping may cancel only while the shipment is Planned or Ready to Pack; Supervisor may cancel at any status before Shipped. Cancelled shipments leave every KPI. | Limits KPI manipulation. Changes the earlier US-017 text (Shipping or Supervisor, any pre-ship status). Refusal for Shipping at a later status is **403** (role rule), not 409. T-9. |
+| **R-6 Hold release** | Shipping can put a shipment on hold but only Quality or Supervisor can release it. | T-22. |
+| **R-7 Moving stock out of a Hold location** | Any movement **out of** a Hold location (transfer **or** scrap) needs Quality or Supervisor. Receiving may transfer, scrap and record production complete for stock that is not in a Hold location. Quality's P-16 permission covers only transfers and scrap into or out of Hold locations (disposition), not production complete. | Replaces the deferred release/reject screen (US-036). The rule is decided by the **source location's type in the database**, not by a request flag. T-13, T-19. |
+| **R-8 Customer-found errors** | After-ship errors are logged against Shipped shipments by Quality or Supervisor only; Shipping logs before-ship errors only (P-12 Y\*). | Matches US-033 (merged into US-027). Shipping logging against a Shipped shipment → 403. T-18. |
+| **R-9 Reporting date and reset** | Only Admin sets the reporting date and runs the demo reset. Reset requires `DEMO_RESET_ENABLED=true` (otherwise the endpoint returns **404**), the CSRF token, an explicit typed confirmation, and a **cooldown** (at most one reset per 10 minutes, recorded in the DB → 429). It writes an audit entry first, rebuilds the seed (including demo users and their passwords) and **ends all sessions**. | Disabled by default on previews and production unless set. Public site: the deployed `demo.admin` password is **not published** (section 4). Security plan §11. T-11, T-20. |
 | **R-10 Self-service limits** | No role can edit or delete audit entries, ledger transactions or status history through the app (append-only, also enforced by DB triggers per ADR-001). | Not a role action; included for completeness. |
+| **R-11 Account safety** (new) | Each user has exactly one role. An Admin cannot change their own role or deactivate themselves, and the last active Admin cannot be deactivated. A role change or deactivation ends that user's sessions immediately. | Applies when user management ships (v1.1); seed data already follows it. The role is read from the `users` row on every request (via the session), never from the cookie or client. |
+| **R-12 Identity comes from the session** (new) | Fields that record *who* did something (packer, verifier, counter, approver, created_by, audit user) are always set by the server from the signed-in user. Request bodies that contain them are rejected (Zod `.strict()` → 400). | Prevents spoofing R-1/R-4 by sending someone else's id. T-16. |
+| **R-13 No state change on GET** (new) | Every state change (including sign-out and demo reset) uses POST (or PUT/PATCH/DELETE) with the CSRF token. GET is always read-only. | A link or image tag on another site cannot change data. T-21. |
 
 ## 4. Demo users (fictional, demo-only)
 
-All accounts use **demo-only** passwords documented in the README; they must never be reused for anything real. Emails use `example.com`. Names are obviously fake.
+All accounts use **demo-only** passwords; they must never be reused for anything real. Emails use `example.com`. Names are obviously fake. Password provisioning follows [security-plan.md](../security/security-plan.md) §11.
 
-| Username | Display name | Role | Why it exists |
-|----------|--------------|------|---------------|
-| `demo.admin` | Demo Admin | Admin | Settings, reporting date, audit log, demo reset |
-| `demo.supervisor` | Demo Supervisor | Supervisor | Approvals, holds, cancel, can also verify |
-| `demo.shipper1` | Demo Shipper One | Shipping | Packer in the demo storyline |
-| `demo.shipper2` | Demo Shipper Two | Shipping | Second Shipping user so verifier ≠ packer can be shown and tested |
-| `demo.receiver` | Demo Receiver | Receiving | Receipts, transfers, count entry |
-| `demo.quality` | Demo Quality | Quality | Verifies, holds, root cause, corrective actions |
-| `demo.viewer` | Demo Viewer | Viewer (optional) | Read-only guest; negative tests |
+| Username | Display name | Role | Why it exists | Password on the public deployed site |
+|----------|--------------|------|---------------|--------------------------------------|
+| `demo.admin` | Demo Admin | Admin | Settings, reporting date, audit log, demo reset | **Not published.** Set from the Netlify env var `DEMO_ADMIN_PASSWORD` (secret) at seed/reset; if unset, the deployed Admin account is created **inactive**. Locally and in tests: the documented demo password. |
+| `demo.supervisor` | Demo Supervisor | Supervisor | Approvals, holds, cancel, can also verify | Published (README / login page), demo-only |
+| `demo.shipper1` | Demo Shipper One | Shipping | Packer in the demo storyline | Published, demo-only |
+| `demo.shipper2` | Demo Shipper Two | Shipping | Second Shipping user so verifier ≠ packer can be shown and tested | Published, demo-only |
+| `demo.receiver` | Demo Receiver | Receiving | Receipts, transfers, count entry | Published, demo-only |
+| `demo.quality` | Demo Quality | Quality | Verifies, holds, root cause, corrective actions | Published, demo-only |
+| `demo.viewer` | Demo Viewer | Viewer | Read-only guest (recommended visitor login); negative tests | Published, demo-only |
 
-Seven accounts (six without the optional Viewer). Dana seeds them; Diego/Sasha decide how passwords are provisioned on the public site (Q-19).
+Seven accounts. Dana seeds them; passwords are hashed by the seed (scrypt, per-user salt), never stored in plain text. The published passwords live in the README and on the login page only; they are not secrets and give no access to anything outside the demo.
 
 ## 5. Test scenarios the matrix must support (for US-080 and the demo script)
 
 | # | Scenario | Expected |
 |---|----------|----------|
-| T-1 | `demo.shipper1` packs SH-xxxx, then tries to verify it | 403, no verification recorded |
+| T-1 | `demo.shipper1` packs SH-xxxx, then tries to verify it | 403 `VERIFIER_SAME_AS_PACKER`, no verification recorded |
 | T-2 | `demo.shipper2` verifies the same shipment | Verified |
 | T-3 | `demo.quality` and `demo.supervisor` each verify a shipment packed by `demo.shipper1` | Verified |
 | T-4 | `demo.supervisor` packs a shipment, then tries to verify it | 403 |
 | T-5 | Shipment fails verification, is re-packed by `demo.shipper2`; `demo.shipper1` verifies | Verified; `demo.shipper2` verifying is refused |
-| T-6 | `demo.admin` tries to ship, verify, receive, log an error | 403 each |
+| T-6 | `demo.admin` tries to pack, verify, ship, hold, receive, log an error, approve a count | 403 each |
 | T-7 | `demo.receiver` tries to approve a count, edit targets, edit lookups | 403 each |
 | T-8 | `demo.quality` tries to approve a count or ship | 403 |
 | T-9 | `demo.shipper1` tries to cancel a Packing shipment | 403 (R-5); `demo.supervisor` succeeds |
-| T-10 | `demo.viewer` tries any create, edit, approve action | 403 |
+| T-10 | `demo.viewer` calls **every** write endpoint directly | 403 each, no row changes |
 | T-11 | Any non-Admin role requests the audit log, user admin, demo reset, reporting date | 403 |
 | T-12 | Unauthenticated client requests any protected page or endpoint | 401 or redirect to login |
 | T-13 | `demo.receiver` transfers stock out of HOLD-01 | 403; `demo.quality` succeeds |
-| T-14 | Request without a valid CSRF token or origin | Rejected, nothing changes |
+| T-14 | Write request without a valid CSRF token, or with a forged `Origin` | 403, nothing changes (form **and** JSON) |
+| T-15 | `demo.supervisor` enters a count line, then tries to approve that count | 403 `APPROVER_SAME_AS_COUNTER`; approving a count entered only by `demo.receiver` succeeds |
+| T-16 | `demo.shipper1` sends a verify request whose body contains `verifierId`/`packerId` of another user | 400, nothing changes (R-12) |
+| T-17 | JSON write with `Content-Type: text/plain` or missing; form write with `application/json` | 415, nothing changes |
+| T-18 | `demo.shipper1` logs a packaging error against a Shipped shipment | 403 (R-8); `demo.quality` succeeds |
+| T-19 | `demo.receiver` scraps stock located in HOLD-01 | 403 (R-7) |
+| T-20 | Demo reset: flag off → 404; flag on, Admin, second reset within 10 min → 429; any other role → 403 | As stated; audit entry written for each accepted reset |
+| T-21 | GET request to any write or logout URL | 405 (or no effect), nothing changes |
+| T-22 | `demo.shipper1` releases a shipment from hold | 403; `demo.quality` succeeds |
 
-## 6. Open points for Sasha (security-reviewer)
+## 6. Review notes (security-reviewer, T-015, 2026-11-25)
 
-1. Confirm R-1 to R-9, especially R-2 (Admin cannot operate) and the 403 versus 409 split.
-2. Decide whether R-4 (approver ≠ counter) goes into v1 core.
-3. Should Supervisor get read access to the audit log? (Draft: Admin only.)
-4. Public-site exposure of demo passwords and the Admin reset (Q-19): password provisioning, rate limiting, or per-environment passwords.
-5. Confirm that keeping an optional read-only Viewer is acceptable.
+What changed from Priya's DRAFT and why:
+
+1. **R-2 confirmed** (Admin is not an operator) and backed by the new **R-11** (one role per user, no self role change, sessions end on role change). Without R-11 an Admin could promote themselves and bypass the separation.
+2. **R-4 accepted into v1 core** and widened to "any line of that count" (recounts included). It is one check plus one test and mirrors R-1. Follow-up for Priya: add to US-044.
+3. **Audit log stays Admin-only** (P-24). Least privilege: the log holds login failures and access denials. Supervisors already see record history on each record. Because the public demo's `demo.admin` password is not published (section 4), visitors cannot read the log. The audit log must not store IP addresses or raw unknown usernames (security plan §9).
+4. **Viewer kept and seeded** as a read-only guest, the recommended login for the public site. Column label changed from "Viewer (opt.)" to "Viewer"; T-10 now covers every write endpoint.
+5. **Response-code order** added (401 → 403 CSRF / 415 → 403 role → 400/422 → 403 identity rule → 409 → 429). This keeps the 403/409 split from the draft and adds 415 (PoC R-1: content-type enforcement) and 429 (rate limits).
+6. **P-12 Shipping and P-23/P-25 Admin marked Y\*** so the special rules (R-8, R-11, R-9) show in the matrix.
+7. **R-7 tightened:** scrap out of a Hold location also needs Quality/Supervisor (scrapping held stock is a disposition). Quality's P-16 scope is defined (Hold moves only).
+8. **R-9 extended for the public site:** reset cooldown (429), 404 when the flag is off, sessions ended after reset, and the deployed Admin password provisioned from a Netlify secret env var rather than published (answers open point 4 / Q-19).
+9. **New R-12** (identity fields come from the session) and **R-13** (no state change on GET).
+10. **R-1** now states that the check runs inside the verify transaction (race-safe), as ADR-001 §8 #1 requires.
+11. Test scenarios T-15 to T-22 added for the new and tightened rules.
+
+Follow-ups (not blockers for this document):
+- product-manager (Priya): update US-017 (R-5), US-044 (R-4), US-011/US-081 (R-9 cooldown, Admin password not published), backlog Q-19 → resolved by security plan §11.
+- backend-developer (Diego) + software-architect (Marcus): confirm the error codes and response order in the API contract; ADR-003 (T-009) fixes the session and CSRF details from security plan §3–§5.
+- data-model-specialist (Dana): seed users per section 4; counts entered by `demo.receiver`; `DEMO_ADMIN_PASSWORD` handling.

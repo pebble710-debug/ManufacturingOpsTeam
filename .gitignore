@@ -1,0 +1,22 @@
+# Dependencies & build output
+node_modules/
+dist/
+.astro/
+.netlify/
+test-results/
+playwright-report/
+coverage/
+.pglite-data/
+
+# Secrets & local env (never commit; public repo)
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# OS / editor
+.DS_Store
+.vscode/
+.idea/
+*.log
