@@ -1,6 +1,7 @@
 # Version 1 Product Backlog
 
-**Task:** T-001 · **Owner:** Priya (product-manager) · **Date:** 2026-11-25 · **Status:** Draft for Orchestrator review
+**Task:** T-001 (first draft), T-004 (revised for the user decisions of 2026-11-25) · **Owner:** Priya (product-manager) · **Date:** 2026-11-25 · **Status:** Revised: V1-CORE cut applied, pending Orchestrator review
+**Release labels:** every story carries `Release: V1-CORE` (build in v1), `Release: V1-CORE (merged into US-xxx)` (its acceptance criteria are built as part of the named host story; no separate card) or `Release: DEFERRED (v1.1)` (kept here, not built until the core is accepted). See section 3.1 and the V1-CORE rationale in section 3.3.
 **Source of truth:** [project-scope.md](../project-scope.md) (v1 contract). All data, names and examples are **fictional** (Cobalt Ridge Components, Inc., Riverton plant).
 
 ## 1. Purpose and how to read this backlog
@@ -24,13 +25,17 @@ This backlog turns scope sections 3 (in scope) and 5 (acceptance criteria) into 
 
 ### Status of ADR-001 (stack, persistence, hosting)
 
-**ADR-001 is pending.** `docs/adr/` does not exist yet. Stories are written **technology-neutral**: they say "data store", "ledger", "chart" and "server-side check", and name no framework, database or charting library. Per project rules no implementation starts until ADR-001 is Accepted (gate G0). See Q-01 for the scope conflict ADR-001 must resolve.
+**ADR-001 is conditionally accepted** (user decision, 2026-11-25): Astro + TypeScript + Chart.js + Netlify Database (Postgres) on Netlify, conditional on a technical proof of concept (new story US-083, build step 0). It supersedes the Flask/SQLite proposal in docs/07 section 7.1. Stories stay **technology-neutral** on purpose ("data store", "ledger", "chart", "server-side check"); technical detail lives in ADR-001. Gate G0 is now: ADR-001 conditionally accepted **and** US-083 (proof of concept) passed. The scope conflict in Q-01 is resolved (project-scope.md section 3.7, section 4).
+
+**Constraints from the user (2026-11-25), apply to every story:** Netlify **Free plan only** (no upgrades, paid add-ons or automatic credit purchases without explicit user approval); develop and test locally as much as possible; the repository is **public** (fictional data only, no secrets); the demo uses a **fixed reporting date** (2026-11-25) labelled on the dashboard.
 
 ### Roles used (07 section 7.2)
 
 Viewer, Shipping, Receiving/Inventory, Quality, Supervisor, Admin. Story "As a" lines use the shop-floor names from scope section 2 (Shipping associate, Receiving/inventory clerk, Quality technician, Supervisor, Viewer, Admin) and each maps to the role of the same name. Where a story names a different persona (presenter, QA tester, developer), it describes a team or demo need, not an application role.
 
-#### Assumed permission matrix (used by US-003, see Q-11)
+**Roles for v1 core (user decision 7):** Admin, Supervisor, Shipping, Receiving, Quality; Viewer is an **optional** read-only guest role (recommended: keep, nearly free, safe for the public site). The authoritative role x action matrix is now [permissions-matrix.md](permissions-matrix.md) (DRAFT, pending Sasha). The table below is the **original T-001 assumption, superseded** (kept for traceability). Verification: Shipping, Quality and Supervisor may verify; verifier must differ from the packer, server-enforced (US-020).
+
+#### Original assumed permission matrix (T-001; superseded by permissions-matrix.md; was Q-11)
 
 | Capability | Viewer | Shipping | Receiving/Inventory | Quality | Supervisor | Admin |
 |------------|:--:|:--:|:--:|:--:|:--:|:--:|
@@ -57,6 +62,101 @@ Viewer, Shipping, Receiving/Inventory, Quality, Supervisor, Admin. Story "As a" 
 | E6 | Non-functional: security, accessibility, quality, deployment/demo | Cross-cutting security, accessibility, responsiveness, tests, deployment and documentation (scope 3.5, 5, 6.7). |
 
 ## 3. Story index
+
+### 3.1 Release index (authoritative)
+
+Core dependencies below point **only to V1-CORE stories** (a merged story is built inside its host, so its dependencies are folded into the host's). Where the per-story "Depends on" line further down differs, **this table wins**. Batch B0 is the new walking-skeleton step (scope section 6 step 0).
+
+| ID | Title | Epic | Release | Core depends on | Batch |
+|----|-------|------|---------|-----------------|-------|
+| US-083 | Walking skeleton and proof of concept (new; also delivers the DEMO banner, US-009) | E6 | V1-CORE | none (gate G0) | B0 |
+| US-001 | Login and logout | E0 | V1-CORE | US-083 | B1 |
+| US-002 | Hashed passwords and no default credentials | E0 | V1-CORE (merged into US-001) | | B1 |
+| US-003 | Server-side role enforcement (HTTP 403) | E0 | V1-CORE | US-001 | B1 |
+| US-004 | Manage users and roles | E0 | DEFERRED (v1.1) | | |
+| US-005 | Append-only audit log (absorbs US-006 Admin view) | E0 | V1-CORE | US-001 | B1 |
+| US-006 | View and filter the audit log | E0 | V1-CORE (merged into US-005) | | B1 |
+| US-007 | Maintain lookup data (F10) | E0 | V1-CORE | US-003 | B1 |
+| US-008 | Edit KPI targets, tolerances and the fixed reporting date | E0 | V1-CORE | US-003 | B1 |
+| US-009 | DEMO - FICTIONAL DATA banner | E0 | V1-CORE (merged into US-083) | | B0 |
+| US-010 | Archive instead of delete | E0 | DEFERRED (v1.1) | | |
+| US-011 | One-command deterministic seed: reference data, demo users and Admin reset | E0 | V1-CORE | US-003, US-007, US-008, US-083 | B1 |
+| US-012 | Seed shipments, errors, rework and the peak-period storyline | E0 | V1-CORE | US-011, US-016, US-021, US-027, US-029, US-032 | B6 |
+| US-013 | Seed receipts, ledger and cycle counts | E0 | V1-CORE | US-012, US-035, US-041, US-044, US-045 | B6 |
+| US-014 | Create and edit a shipment (F1; absorbs US-015, US-023) | E1 | V1-CORE | US-003, US-007 | B2 |
+| US-015 | Edit a shipment before it ships | E1 | V1-CORE (merged into US-014) | | B2 |
+| US-016 | Status lifecycle, history, hold, release and cancel (absorbs US-017) | E1 | V1-CORE | US-014 | B2 |
+| US-017 | Hold, release and cancel with reason | E1 | V1-CORE (merged into US-016) | | B2 |
+| US-018 | Shipment detail page | E1 | V1-CORE (merged into US-024) | | B2 |
+| US-019 | Pack and Verify checklist (F2) | E1 | V1-CORE | US-016 | B2 |
+| US-020 | Verifier must differ from packer | E1 | V1-CORE | US-019 | B2 |
+| US-021 | Ship a verified shipment (F3; absorbs US-022) | E1 | V1-CORE | US-019, US-020, US-007 | B2 |
+| US-022 | Late reason required when late | E1 | V1-CORE (merged into US-021) | | B2 |
+| US-023 | Document checklist flags | E1 | V1-CORE (merged into US-014) | | B2 |
+| US-024 | Shipment list, search, filters and detail page (absorbs US-018) | E1 | V1-CORE | US-016 | B2 |
+| US-025 | Overdue and due-soon views | E1 | DEFERRED (v1.1) | | |
+| US-026 | Record delivered date (optional) | E1 | DEFERRED (v1.1) | | |
+| US-027 | Log a packaging error (F4; absorbs US-033 customer-found errors) | E2 | V1-CORE | US-016, US-007, US-021 | B3 |
+| US-028 | Failed verification opens a pre-filled error | E2 | DEFERRED (v1.1) | | |
+| US-029 | Log rework (F5) | E2 | V1-CORE | US-027 | B3 |
+| US-030 | Cannot ship after failed verification without error, rework and re-verification | E2 | V1-CORE | US-019, US-027, US-029, US-021 | B3 |
+| US-031 | Root cause 6M and 5 Whys | E2 | V1-CORE (merged into US-032) | | B3 |
+| US-032 | Root cause, corrective action (F6), error list and close-out (absorbs US-031, US-034) | E2 | V1-CORE | US-027, US-029 | B3 |
+| US-033 | Log a customer-found error after shipment | E2 | V1-CORE (merged into US-027) | | B3 |
+| US-034 | Packaging error list and close-out | E2 | V1-CORE (merged into US-032) | | B3 |
+| US-035 | Receive material and move stock (F7, F8; absorbs US-039) | E3 | V1-CORE | US-007, US-037 | B4 |
+| US-036 | Release or reject held material | E3 | DEFERRED (v1.1) | | |
+| US-037 | Append-only inventory ledger and on-hand (absorbs US-038) | E3 | V1-CORE | US-003, US-007, US-005 | B4 |
+| US-038 | On-hand by part, location and lot | E3 | V1-CORE (merged into US-037) | | B4 |
+| US-039 | Transfer, scrap and production complete (F8) | E3 | V1-CORE (merged into US-035) | | B4 |
+| US-040 | Supervisor-approved manual adjustment | E3 | DEFERRED (v1.1) | | |
+| US-041 | Shipping consumes inventory | E3 | V1-CORE | US-021, US-037 | B4 |
+| US-042 | Create a cycle-count list | E3 | V1-CORE (merged into US-043) | | B4 |
+| US-043 | Cycle-count list and blind count entry (F9; absorbs US-042) | E3 | V1-CORE | US-037 | B4 |
+| US-044 | Approve a count and post adjustments | E3 | V1-CORE | US-043, US-037 | B4 |
+| US-045 | Lot trace report (R7) | E3 | V1-CORE | US-035, US-041 | B4 |
+| US-046 | Single KPI module and common rules | E4 | V1-CORE | US-016 | B5 |
+| US-047 | Delivery KPIs: KPI-1 On-Time %, KPI-2 OTIF %, KPI-6 Cycle time (absorbs US-048, US-052) | E4 | V1-CORE | US-046, US-021 | B5 |
+| US-048 | KPI-2 OTIF % | E4 | V1-CORE (merged into US-047) | | B5 |
+| US-049 | Packaging KPIs: KPI-3 Error rate, KPI-4 FPY, KPI-5 Rework (absorbs US-050, US-051) | E4 | V1-CORE | US-046, US-019, US-027, US-029 | B5 |
+| US-050 | KPI-4 Packaging first-pass yield | E4 | V1-CORE (merged into US-049) | | B5 |
+| US-051 | KPI-5 Rework frequency and minutes | E4 | V1-CORE (merged into US-049) | | B5 |
+| US-052 | KPI-6 Shipment cycle time | E4 | V1-CORE (merged into US-047) | | B5 |
+| US-053 | KPI-7 Inventory accuracy % | E4 | V1-CORE | US-046, US-044 | B5 |
+| US-054 | Dashboard KPI tiles, date range and fixed reporting date label (absorbs US-055 date range) | E4 | V1-CORE | US-047, US-049, US-053, US-008 | B6 |
+| US-055 | Dashboard filters: date range, customer, carrier | E4 | V1-CORE (merged into US-054; date range only) | | B6 |
+| US-056 | C1 On-time shipment % by week vs target | E4 | V1-CORE | US-047, US-054 | B6 |
+| US-057 | C2 Shipments per day vs packaging error rate | E4 | V1-CORE | US-049, US-054 | B6 |
+| US-058 | C3 Packaging errors by category (Pareto) | E4 | V1-CORE | US-032, US-054 | B6 |
+| US-059 | C4 Late shipments by reason | E4 | DEFERRED (v1.1) | | |
+| US-060 | C5 Rework events and minutes by week | E4 | DEFERRED (v1.1) | | |
+| US-061 | C6 Inventory accuracy by ABC class | E4 | DEFERRED (v1.1) | | |
+| US-062 | Needs-attention lists | E4 | DEFERRED (v1.1) | | |
+| US-063 | Click-through from KPI tiles to records | E4 | DEFERRED (v1.1) | | |
+| US-064 | KPI-8 Dock-to-stock time (optional) | E4 | DEFERRED (v1.1) | | |
+| US-084 | Dashboard customer and carrier filters (new; split from US-055) | E4 | DEFERRED (v1.1) | | |
+| US-065 | Report framework, CSV export, R1 Shipment Log, R3 Error and Rework Log, R4 On-Hand (absorbs US-066, US-068, US-069) | E5 | V1-CORE | US-003, US-046, US-021, US-029, US-032, US-037 | B6 |
+| US-066 | R1 Shipment Log | E5 | V1-CORE (merged into US-065) | | B6 |
+| US-067 | R2 Late Shipment Report | E5 | DEFERRED (v1.1) | | |
+| US-068 | R3 Packaging Error and Rework Log | E5 | V1-CORE (merged into US-065) | | B6 |
+| US-069 | R4 Inventory On-Hand | E5 | V1-CORE (merged into US-065) | | B6 |
+| US-070 | R5 Inventory Transaction History | E5 | DEFERRED (v1.1) | | |
+| US-071 | R6 Cycle Count Accuracy | E5 | DEFERRED (v1.1) | | |
+| US-072 | R8 KPI Summary (printable) | E5 | DEFERRED (v1.1) | | |
+| US-073 | CSRF and request forgery protection | E6 | V1-CORE (merged into US-074) | | B7 |
+| US-074 | Request security: CSRF, server-side validation and safe data access (absorbs US-073) | E6 | V1-CORE | US-003 | B7 |
+| US-075 | Secrets, debug off, generic errors, pinned dependencies and audit (absorbs US-076) | E6 | V1-CORE | US-001 | B7 |
+| US-076 | Pinned dependencies and vulnerability check | E6 | V1-CORE (merged into US-075) | | B7 |
+| US-077 | Accessible and responsive interface (absorbs US-078) | E6 | V1-CORE | US-014, US-054, US-056, US-024 | B7 |
+| US-078 | Usable on laptop and tablet | E6 | V1-CORE (merged into US-077) | | B7 |
+| US-079 | KPI unit tests with hand-calculated fixtures | E6 | V1-CORE | US-047, US-049, US-053 | B5 |
+| US-080 | Route and permission tests | E6 | V1-CORE | US-003, US-020, US-044, US-007, US-008 | B7 |
+| US-081 | Deployed demo with persistent data and README (absorbs US-082) | E6 | V1-CORE | US-011, US-075, US-083 | B7 |
+| US-082 | README, run steps and demo notes | E6 | V1-CORE (merged into US-081) | | B7 |
+
+### 3.2 Original draft index (T-001; kept for traceability)
+
+This is the first-draft index. Its **Priority** and **Depends on** columns are superseded by section 3.1 and the per-story Release lines; do not use them for planning.
 
 | ID | Title | Epic | Priority | Size | Batch | Depends on | Acceptance |
 |----|-------|------|----------|------|-------|-----------|-----------|
@@ -143,6 +243,33 @@ Viewer, Shipping, Receiving/Inventory, Quality, Supervisor, Admin. Story "As a" 
 | US-081 | Deployed demo with persistent data | E6 | Must | L | B7 | US-011, US-075 | Not yet reviewed |
 | US-082 | README, run steps and demo notes | E6 | Should | S | B7 | US-011, US-079 | Not yet reviewed |
 
+### 3.3 V1-CORE rationale (why this cut)
+
+**Rule used:** keep a story in the core only if removing it would leave the assignment or a scope section 5 criterion unmet; otherwise defer it. Then merge very small stories into the story that must be built with them, so the team plans and reviews fewer cards. Nothing is dropped: every story keeps its text and acceptance criteria and carries a release label.
+
+| User priority (decision 8) | What stays in the core | Main stories |
+|----------------------------|------------------------|--------------|
+| Shipment tracking | Create/edit, status lifecycle with history, hold/cancel, ship step with late reason, list with search/filters and detail | US-014, US-016, US-021, US-024 |
+| Packaging verification | Pack and Verify checklist, verifier is not the packer (server-enforced), ship gate | US-019, US-020, US-030 |
+| Packaging errors and rework | Error log (incl. customer-found), rework, root cause, corrective action, error list and close-out | US-027, US-029, US-032 |
+| Basic inventory | Receive and move stock, append-only ledger and on-hand, ship consumes stock, blind cycle count with Supervisor approval, lot trace | US-035, US-037, US-041, US-043, US-044, US-045 |
+| Useful KPIs and charts | KPI module, six tiles (plus rework in the report), three charts (C1, C2, C3), three reports plus lot trace, fixed reporting date | US-046, US-047, US-049, US-053, US-054, US-056, US-057, US-058, US-065, US-008 |
+| Fictional demo data | Deterministic seed, seven demo users, peak-period storyline, SH-1042, Admin reset | US-011, US-012, US-013 |
+| Reliable saved records | Walking skeleton and proof of concept on Netlify, persistent Postgres, deployed demo | US-083, US-081 |
+| Professional, accessible interface | DEMO banner, text status, keyboard, tablet, laptop; secure by default | US-077, US-074, US-075, US-001, US-003 |
+
+**What was cut (18 stories deferred, none silently dropped):** user-management screen, archive, overdue/due-soon view, delivered date, pre-filled error form, held-material release screen, manual adjustment, charts C4, C5, C6, needs-attention lists, click-through, KPI-8, customer/carrier dashboard filters, reports R2, R5, R6, R8. For each, the core already has a workable substitute (see the Release line of each story).
+
+**What was merged (26 stories):** small stories built inside a host story (for example hashing into login, edit and document flags into create shipment, hold/cancel into the status lifecycle, KPI-2 and KPI-6 into KPI-1, four reports into the report framework). Their acceptance criteria stay valid and are tested; the saving is in planning, hand-offs and review, not in testing.
+
+**Result:** 82 stories (76 Must) became 84 stories (two new: US-083 walking skeleton, US-084 deferred filters) of which **40 are V1-CORE build cards**, 26 are merged into a core card and 18 are deferred. The real reduction in work comes from the 18 deferred stories plus the narrower reports and charts; the merged stories are bigger cards, so Priya expects more L-sized cards in B2, B3 and B6 (flag to Olivia for task splitting).
+
+**Honest risks of the cut:** (1) no manage-users screen, so users can only change by reseeding or the database; (2) no needs-attention panel, so the demo story depends on the shipment list filters; (3) only three charts, with no inventory chart (first candidate to bring back: US-061).
+
+### 3.4 New stories added in T-004
+
+US-083 (core, E6) and US-084 (deferred, E4) are defined at the end of section 4.
+
 ## 4. User stories
 
 ### E0 Foundation: auth, roles, audit, reference data, seed
@@ -150,6 +277,9 @@ Viewer, Shipping, Receiving/Inventory, Quality, Supervisor, Admin. Story "As a" 
 _Login, server-side roles, audit log, lookups and targets, demo banner, deterministic seed data._
 
 #### US-001 Login and logout
+
+> **Release: V1-CORE** · Core depends on: US-083 · Absorbs US-002 (its criteria below are built here). Sign-in works for the demo users in permissions-matrix.md section 4; unauthenticated data requests get 401.
+
 As a **user of any role**, I want to sign in with a username and password and sign out so that only authorised people use the system.
 
 - **Scope ref:** project-scope.md section 3 (item 3.5a); **Scope section 5 criteria:** 7
@@ -165,6 +295,9 @@ As a **user of any role**, I want to sign in with a username and password and si
 - **Out of scope:** SSO, MFA, password reset by email, lockout policy (scope §4).
 
 #### US-002 Hashed passwords and no default credentials
+
+> **Release: V1-CORE (merged into US-001)** · Folded into the login story: salted scrypt hashes, no plain-text passwords, no default credentials outside the demo seed.
+
 As a **Admin**, I want passwords stored only as salted one-way hashes and no built-in default credentials outside demo seed data so that a data leak does not expose passwords.
 
 - **Scope ref:** project-scope.md section 3 (item 3.5b); **Scope section 5 criteria:** none
@@ -179,6 +312,9 @@ As a **Admin**, I want passwords stored only as salted one-way hashes and no bui
 - **Out of scope:** Anything listed in scope section 4 (deferred to v2).
 
 #### US-003 Server-side role enforcement (HTTP 403)
+
+> **Release: V1-CORE** · Core depends on: US-001 · **Authoritative matrix: [permissions-matrix.md](permissions-matrix.md)** (replaces the matrix quoted in section 1 and the role examples below; Admin is not an operator; Viewer optional; 401 when not signed in; deny by default). Where an AC below names a role that differs from the matrix, the matrix wins.
+
 As a **Admin**, I want every write and restricted read checked against the signed-in user's role on the server so that hiding a button is never the only protection.
 
 - **Scope ref:** project-scope.md section 3 (item 3.5a); **Scope section 5 criteria:** 7
@@ -196,6 +332,9 @@ As a **Admin**, I want every write and restricted read checked against the signe
 - **Out of scope:** Fine-grained custom permissions (scope §4).
 
 #### US-004 Manage users and roles
+
+> **Release: DEFERRED (v1.1)** · Reason: users are seeded in the core; the rule "only Admin manages users" stays in the matrix (P-23) and is tested as 403 for other roles once the screen exists. Decision for the user: confirm this cut.
+
 As a **Admin**, I want to create, deactivate and change the role of users so that the right people have the right access.
 
 - **Scope ref:** project-scope.md section 3 (item 3.5a); **Scope section 5 criteria:** 7
@@ -211,6 +350,9 @@ As a **Admin**, I want to create, deactivate and change the role of users so tha
 - **Out of scope:** Self-service password reset, MFA.
 
 #### US-005 Append-only audit log
+
+> **Release: V1-CORE** · Core depends on: US-001 · Absorbs US-006 (simple Admin-only list with user and date filters). Append-only is also enforced by database triggers (ADR-001).
+
 As a **Admin**, I want every write, login result and access denial recorded with user, time, action, record and old-to-new values so that changes are attributable.
 
 - **Scope ref:** project-scope.md section 3 (item 3.5e); **Scope section 5 criteria:** none
@@ -225,6 +367,9 @@ As a **Admin**, I want every write, login result and access denial recorded with
 - **Out of scope:** Anything listed in scope section 4 (deferred to v2).
 
 #### US-006 View and filter the audit log
+
+> **Release: V1-CORE (merged into US-005)** · Built with the audit log; Admin only (P-24).
+
 As a **Admin**, I want to browse the audit log filtered by user, record and date range so that I can investigate who changed what.
 
 - **Scope ref:** project-scope.md section 3 (item 3.5e); **Scope section 5 criteria:** none
@@ -237,6 +382,9 @@ As a **Admin**, I want to browse the audit log filtered by user, record and date
 - **Out of scope:** Anything listed in scope section 4 (deferred to v2).
 
 #### US-007 Maintain lookup data (F10)
+
+> **Release: V1-CORE** · Core depends on: US-003 · Editable by **Supervisor and Admin** (P-20), 403 for everyone else. Core minimum: add/edit/deactivate; nothing is ever deleted.
+
 As a **Supervisor**, I want to manage customers, suppliers, carriers, parts, locations and reason codes so that forms offer controlled dropdowns and reports group cleanly.
 
 - **Scope ref:** project-scope.md section 3 (item 3.3a); **Scope section 5 criteria:** none
@@ -252,7 +400,14 @@ As a **Supervisor**, I want to manage customers, suppliers, carriers, parts, loc
   - Given any non-Supervisor, non-Admin role, when they attempt to change a lookup, then the response is 403.
 - **Out of scope:** Packaging instruction authoring with photos (scope §4); only a reference string and revision are stored.
 
-#### US-008 Edit KPI targets and tolerances
+#### US-008 Edit KPI targets, tolerances and the fixed reporting date
+
+> **Release: V1-CORE** · Core depends on: US-003 · Targets and tolerances: Supervisor and Admin (P-21). **Absorbs the fixed reporting date (user decision 6), Admin only (P-22).** Additional acceptance criteria:
+> - Given the seeded settings, when QA opens settings, then the reporting date is 2026-11-25 in "fixed demo date" mode.
+> - Given the fixed mode, when any user opens the dashboard or a report on any real calendar date, then the default period is the 30 days ending on the reporting date, overdue and "today" logic use the reporting date, and the page shows a text label such as "Reporting date: 25 Nov 2026 (fixed demo date)".
+> - Given an Admin, when they switch to live mode, then the real date is used and the label says "Live date"; a non-Admin attempt gets 403; an invalid date is rejected inline; every change is audited.
+> - Given fixed mode and a record created live (for example a shipment shipped during the demo), when the dashboard is reloaded, then the record falls inside the default period (business-clock rule, scope section 3.4; design confirmation Marcus/Kenji).
+
 As a **Supervisor**, I want to change KPI targets and cycle-count tolerances by ABC class so that the dashboard compares against our current goals.
 
 - **Scope ref:** project-scope.md section 3 (item 3.4a); **Scope section 5 criteria:** none
@@ -267,6 +422,9 @@ As a **Supervisor**, I want to change KPI targets and cycle-count tolerances by 
 - **Out of scope:** Anything listed in scope section 4 (deferred to v2).
 
 #### US-009 DEMO - FICTIONAL DATA banner
+
+> **Release: V1-CORE (merged into US-083)** · Delivered by the walking skeleton; the banner also shows the deploy context (production or preview).
+
 As a **Viewer**, I want a banner on every page saying the data is fictional so that nobody mistakes the prototype for a real system.
 
 - **Scope ref:** project-scope.md section 3 (item 3.6b); **Scope section 5 criteria:** none
@@ -279,6 +437,9 @@ As a **Viewer**, I want a banner on every page saying the data is fictional so t
 - **Out of scope:** Anything listed in scope section 4 (deferred to v2).
 
 #### US-010 Archive instead of delete
+
+> **Release: DEFERRED (v1.1)** · Reason: the core has no delete action (cancel and close statuses keep history), so archiving is not needed to be complete.
+
 As a **Supervisor**, I want to archive shipments, errors and similar records rather than delete them so that history and audit trail stay intact.
 
 - **Scope ref:** project-scope.md section 3 (item 3.5e); **Scope section 5 criteria:** none
@@ -291,7 +452,10 @@ As a **Supervisor**, I want to archive shipments, errors and similar records rat
   - Given an archived record referenced by other records, when those records are shown, then the reference still displays.
 - **Out of scope:** Anything listed in scope section 4 (deferred to v2).
 
-#### US-011 One-command deterministic seed: reference data and users
+#### US-011 One-command deterministic seed: reference data, demo users and Admin reset
+
+> **Release: V1-CORE** · Core depends on: US-003, US-007, US-008, US-083 · **Changes from the first draft:** (a) demo users are the seven accounts in permissions-matrix.md section 4 (2 Shipping, 1 Receiving, 1 Quality, 1 Supervisor, 1 Admin, optional Viewer), not "one per role"; (b) the command is `npm run db:reset-seed` locally; (c) additional criterion: given `DEMO_RESET_ENABLED=true`, when an Admin confirms the reset action on the deployed site, then the data is rebuilt from the seed within the platform time limit, an audit entry is written first, and every other role gets 403; when the flag is not set, the action is unavailable.
+
 As a **developer or QA tester**, I want one command that rebuilds the demo data store from scratch with the same result every time so that demos and tests are repeatable.
 
 - **Scope ref:** project-scope.md section 3 (item 3.6a); **Scope section 5 criteria:** 8
@@ -307,6 +471,9 @@ As a **developer or QA tester**, I want one command that rebuilds the demo data 
 - **Out of scope:** Importing real data; connecting to any external system.
 
 #### US-012 Seed shipments, errors, rework and the peak-period storyline
+
+> **Release: V1-CORE** · Core depends on: US-011, US-016, US-021, US-027, US-029, US-032 · The "seed anchor date" below is the fixed reporting date 2026-11-25. Seed includes shipments packed by `demo.shipper1`/`demo.shipper2` and verified by a different user (consistent with the verifier rule).
+
 As a **presenter**, I want about 300 fictional shipments over 6 months with a peak period, errors, rework and late shipments so that the dashboard tells a realistic story in the demo.
 
 - **Scope ref:** project-scope.md section 3 (item 3.6b); **Scope section 5 criteria:** 8
@@ -324,6 +491,9 @@ As a **presenter**, I want about 300 fictional shipments over 6 months with a pe
 - **Out of scope:** Anything listed in scope section 4 (deferred to v2).
 
 #### US-013 Seed receipts, ledger and cycle counts
+
+> **Release: V1-CORE** · Core depends on: US-012, US-035, US-041, US-044, US-045
+
 As a **presenter**, I want about 150 fictional receipts, a consistent ledger and about 12 cycle counts so that the inventory screens and accuracy KPI have realistic data and lot traces work.
 
 - **Scope ref:** project-scope.md section 3 (item 3.6b); **Scope section 5 criteria:** 3, 5, 8
@@ -343,6 +513,9 @@ As a **presenter**, I want about 150 fictional receipts, a consistent ledger and
 _Create, track, pack/verify and ship outbound shipments with status history (scope 3.1; forms F1-F3)._
 
 #### US-014 Create a shipment (F1)
+
+> **Release: V1-CORE** · Core depends on: US-003, US-007 · Absorbs US-015 (edit before ship) and US-023 (document flags). Create/edit: Shipping and Supervisor (P-04). "Today" means the reporting date when fixed mode is on.
+
 As a **Shipping associate**, I want to create a shipment with a header and one or more lines so that the outbound order release is recorded.
 
 - **Scope ref:** project-scope.md section 3 (item 3.1a); **Scope section 5 criteria:** 1
@@ -359,6 +532,9 @@ As a **Shipping associate**, I want to create a shipment with a header and one o
 - **Out of scope:** Importing orders from an ERP or EDI (scope §4).
 
 #### US-015 Edit a shipment before it ships
+
+> **Release: V1-CORE (merged into US-014)**
+
 As a **Shipping associate**, I want to correct header and line details while the shipment is not yet shipped so that the record matches the real order.
 
 - **Scope ref:** project-scope.md section 3 (item 3.1a); **Scope section 5 criteria:** 1
@@ -372,7 +548,10 @@ As a **Shipping associate**, I want to correct header and line details while the
   - Given the same validation rules as creation, when an edit violates them, then it is rejected inline.
 - **Out of scope:** Anything listed in scope section 4 (deferred to v2).
 
-#### US-016 Status lifecycle and history
+#### US-016 Status lifecycle, history, hold, release and cancel
+
+> **Release: V1-CORE** · Core depends on: US-014 · Absorbs US-017. Role rules per permissions-matrix.md: hold by Shipping, Quality or Supervisor; release by Quality or Supervisor (R-6); cancel by Supervisor, and by Shipping only while Planned or Ready to Pack (R-5). The Delivered transition is not built in the core (US-026 deferred); ignore it in the transitions below.
+
 As a **Shipping associate**, I want status changes only through defined actions, each recorded in a history so that the shipment's progress and timings are trustworthy.
 
 - **Scope ref:** project-scope.md section 3 (item 3.1b); **Scope section 5 criteria:** 1
@@ -389,6 +568,9 @@ As a **Shipping associate**, I want status changes only through defined actions,
 - **Out of scope:** Automatic status updates from carriers (scope §4).
 
 #### US-017 Hold, release and cancel with reason
+
+> **Release: V1-CORE (merged into US-016)** · The cancel and hold roles in the ACs below are replaced by the rules stated on US-016 and permissions-matrix.md.
+
 As a **Quality technician**, I want to put a shipment On Hold with a reason and later release it, and to cancel shipments so that blocked work is visible and cancelled work is excluded from KPIs.
 
 - **Scope ref:** project-scope.md section 3 (item 3.1b); **Scope section 5 criteria:** none
@@ -403,6 +585,9 @@ As a **Quality technician**, I want to put a shipment On Hold with a reason and 
 - **Out of scope:** Full MRB disposition workflow (scope §4).
 
 #### US-018 Shipment detail page
+
+> **Release: V1-CORE (merged into US-024)** · Built together with the shipment list.
+
 As a **Viewer**, I want a page showing one shipment with lines, dates, checklist results, errors, rework, documents flags and history so that I can see everything about it in one place.
 
 - **Scope ref:** project-scope.md section 3 (item 3.1b, 3.1f); **Scope section 5 criteria:** none
@@ -416,6 +601,9 @@ As a **Viewer**, I want a page showing one shipment with lines, dates, checklist
 - **Out of scope:** Anything listed in scope section 4 (deferred to v2).
 
 #### US-019 Pack and Verify checklist (F2)
+
+> **Release: V1-CORE** · Core depends on: US-016 · Packing: Shipping and Supervisor. **Verifying: Shipping, Quality and Supervisor (user decision 5)**, always subject to US-020 (verifier is not the packer). Admin and Receiving get 403.
+
 As a **Shipping associate**, I want to pack a shipment and have it verified against a checklist so that errors are caught before the shipment leaves.
 
 - **Scope ref:** project-scope.md section 3 (item 3.1c); **Scope section 5 criteria:** 1, 2
@@ -432,6 +620,9 @@ As a **Shipping associate**, I want to pack a shipment and have it verified agai
 - **Out of scope:** Barcode or scanner verification and label printing (scope §4).
 
 #### US-020 Verifier must differ from packer
+
+> **Release: V1-CORE** · Core depends on: US-019 · Server-enforced (user decision 5). Additional criteria: (a) the refusal applies to every verifying role, including Supervisor and Quality, when that user is the recorded packer; (b) the refusal is HTTP 403 with a clear message and a distinct error code, and an audit entry is written; (c) the seed provides at least two Shipping users (`demo.shipper1`, `demo.shipper2`) plus Quality and Supervisor so QA can test it (permissions-matrix.md scenarios T-1 to T-5). The "Viewer or Receiving/Inventory" AC below becomes "Admin, Receiving or Viewer".
+
 As a **Supervisor**, I want the system to refuse verification by the same person who packed so that the second check is independent.
 
 - **Scope ref:** project-scope.md section 3 (item 3.1c); **Scope section 5 criteria:** 2
@@ -446,6 +637,9 @@ As a **Supervisor**, I want the system to refuse verification by the same person
 - **Out of scope:** A configurable on/off switch for this rule (docs/02 says configurable; v1 enforces it always, Q-12).
 
 #### US-021 Ship a verified shipment (F3)
+
+> **Release: V1-CORE** · Core depends on: US-019, US-020, US-007 · Absorbs US-022 (late reason). Ship: Shipping and Supervisor (P-08); Admin gets 403. "Today" and "future ship date" use the reporting date in fixed mode.
+
 As a **Shipping associate**, I want to record ship date, carrier, tracking, packages, weight and shipped quantities so that the shipment is completed and measurable.
 
 - **Scope ref:** project-scope.md section 3 (item 3.1d); **Scope section 5 criteria:** 1, 2
@@ -463,6 +657,9 @@ As a **Shipping associate**, I want to record ship date, carrier, tracking, pack
 - **Out of scope:** Carrier API calls, label printing, generating shipping documents (scope §4).
 
 #### US-022 Late reason required when late
+
+> **Release: V1-CORE (merged into US-021)**
+
 As a **Shipping associate**, I want to be forced to state why a shipment is late so that late causes show up in the late-reason chart.
 
 - **Scope ref:** project-scope.md section 3 (item 3.1d); **Scope section 5 criteria:** none
@@ -477,6 +674,9 @@ As a **Shipping associate**, I want to be forced to state why a shipment is late
 - **Out of scope:** Anything listed in scope section 4 (deferred to v2).
 
 #### US-023 Document checklist flags
+
+> **Release: V1-CORE (merged into US-014)**
+
 As a **Shipping associate**, I want to tick packing slip, BOL, C of C and labels as ready so that paperwork gaps are visible before shipping.
 
 - **Scope ref:** project-scope.md section 3 (item 3.1e); **Scope section 5 criteria:** none
@@ -490,7 +690,10 @@ As a **Shipping associate**, I want to tick packing slip, BOL, C of C and labels
   - Given the flags, when QA looks for document generation, then none exists in v1.
 - **Out of scope:** Generating packing slips, BOLs and C of C (scope §4).
 
-#### US-024 Shipment list with search and filters
+#### US-024 Shipment list, search, filters and detail page
+
+> **Release: V1-CORE** · Core depends on: US-016 · Absorbs US-018 (detail page). Adds an "Overdue" filter (promise date before the reporting date, not Shipped or Cancelled) and shows the hold reason, which replaces the deferred US-025 view.
+
 As a **Shipping associate**, I want to search and filter shipments so that I can find work quickly.
 
 - **Scope ref:** project-scope.md section 3 (item 3.1f); **Scope section 5 criteria:** none
@@ -505,6 +708,9 @@ As a **Shipping associate**, I want to search and filter shipments so that I can
 - **Out of scope:** Anything listed in scope section 4 (deferred to v2).
 
 #### US-025 Overdue and due-soon views
+
+> **Release: DEFERRED (v1.1)** · Reason: the shipment list "Overdue" and "Late only" filters (US-024) cover the core need.
+
 As a **Shipping associate**, I want a view of shipments overdue or due in the next 3 days that are not yet Ready to Pack so that I can plan the day.
 
 - **Scope ref:** project-scope.md section 3 (item 3.1f); **Scope section 5 criteria:** none
@@ -519,6 +725,9 @@ As a **Shipping associate**, I want a view of shipments overdue or due in the ne
 - **Out of scope:** Anything listed in scope section 4 (deferred to v2).
 
 #### US-026 Record delivered date (optional)
+
+> **Release: DEFERRED (v1.1)** · Reason: optional; no KPI uses it.
+
 As a **Shipping associate**, I want to optionally record a delivered date on a shipped shipment so that delivery can be noted when I know it.
 
 - **Scope ref:** project-scope.md section 3 (item 3.1b); **Scope section 5 criteria:** none
@@ -536,6 +745,9 @@ As a **Shipping associate**, I want to optionally record a delivered date on a s
 _Log errors, rework, root cause and corrective actions; gate shipping on a failed verification (scope 3.2; forms F4-F6)._
 
 #### US-027 Log a packaging error (F4)
+
+> **Release: V1-CORE** · Core depends on: US-016, US-007, US-021 · Absorbs US-033 (customer-found errors). Shipping, Quality and Supervisor log before-ship errors; after-ship (customer-found) errors are logged by Quality or Supervisor (R-8); Admin, Receiving and Viewer get 403.
+
 As a **Shipping associate**, I want to log a packaging error with category, severity and where and when it was found so that errors are counted and analysed.
 
 - **Scope ref:** project-scope.md section 3 (item 3.2a); **Scope section 5 criteria:** 1
@@ -553,6 +765,9 @@ As a **Shipping associate**, I want to log a packaging error with category, seve
 - **Out of scope:** Anything listed in scope section 4 (deferred to v2).
 
 #### US-028 Failed verification opens a pre-filled error
+
+> **Release: DEFERRED (v1.1)** · Reason: convenience; the verifier logs the error with the normal form (US-027). The gate (US-030) does not depend on it.
+
 As a **Shipping associate**, I want a failed verification to open the error form already filled in so that I do not retype what the checklist already told us.
 
 - **Scope ref:** project-scope.md section 3 (item 3.2a, 3.1c); **Scope section 5 criteria:** 1, 2
@@ -566,6 +781,9 @@ As a **Shipping associate**, I want a failed verification to open the error form
 - **Out of scope:** Anything listed in scope section 4 (deferred to v2).
 
 #### US-029 Log rework (F5)
+
+> **Release: V1-CORE** · Core depends on: US-027 · Shipping, Quality, Supervisor (P-13).
+
 As a **Shipping associate**, I want to log what rework was done, when, and whether it re-verified OK so that rework effort and frequency are measured.
 
 - **Scope ref:** project-scope.md section 3 (item 3.2b); **Scope section 5 criteria:** 1, 2
@@ -581,6 +799,9 @@ As a **Shipping associate**, I want to log what rework was done, when, and wheth
 - **Out of scope:** Anything listed in scope section 4 (deferred to v2).
 
 #### US-030 Cannot ship after failed verification without error, rework and re-verification
+
+> **Release: V1-CORE** · Core depends on: US-019, US-027, US-029, US-021 (no longer depends on the deferred US-028)
+
 As a **Supervisor**, I want the system to block shipping until a failed shipment has a logged error, completed rework and a passing re-verification so that defects cannot leave the dock.
 
 - **Scope ref:** project-scope.md section 3 (item 3.2a, 3.2b, 3.1c); **Scope section 5 criteria:** 2
@@ -596,6 +817,9 @@ As a **Supervisor**, I want the system to block shipping until a failed shipment
 - **Out of scope:** Anything listed in scope section 4 (deferred to v2).
 
 #### US-031 Root cause 6M and 5 Whys
+
+> **Release: V1-CORE (merged into US-032)** · Quality and Supervisor only.
+
 As a **Quality technician**, I want to record a root-cause category and a 5 Whys note on an error so that we learn why errors happen.
 
 - **Scope ref:** project-scope.md section 3 (item 3.2c); **Scope section 5 criteria:** none
@@ -609,7 +833,10 @@ As a **Quality technician**, I want to record a root-cause category and a 5 Whys
   - Given an invalid category value sent directly, when saved, then it is rejected.
 - **Out of scope:** Fishbone diagram tool, full 8D/CAPA workflow (scope §4).
 
-#### US-032 Corrective action (F6)
+#### US-032 Root cause, corrective action (F6), error list and close-out
+
+> **Release: V1-CORE** · Core depends on: US-027, US-029 · Absorbs US-031 (root cause, 5 Whys) and US-034 (error list, close-out). Quality and Supervisor (P-14).
+
 As a **Quality technician**, I want to create a simple corrective action with owner, due date and status so that fixes are followed through.
 
 - **Scope ref:** project-scope.md section 3 (item 3.2c); **Scope section 5 criteria:** none
@@ -625,6 +852,9 @@ As a **Quality technician**, I want to create a simple corrective action with ow
 - **Out of scope:** Verification-of-effectiveness steps, 8D workflow (scope §4).
 
 #### US-033 Log a customer-found error after shipment
+
+> **Release: V1-CORE (merged into US-027)**
+
 As a **Quality technician**, I want to record an error found by the customer after the shipment shipped so that escapes are tracked separately from internal catches.
 
 - **Scope ref:** project-scope.md section 3 (item 3.2a); **Scope section 5 criteria:** none
@@ -638,6 +868,9 @@ As a **Quality technician**, I want to record an error found by the customer aft
 - **Out of scope:** Anything listed in scope section 4 (deferred to v2).
 
 #### US-034 Packaging error list and close-out
+
+> **Release: V1-CORE (merged into US-032)**
+
 As a **Quality technician**, I want to list, filter and close packaging errors so that open issues are managed.
 
 - **Scope ref:** project-scope.md section 3 (item 3.2a, 3.2c); **Scope section 5 criteria:** none
@@ -656,6 +889,9 @@ As a **Quality technician**, I want to list, filter and close packaging errors s
 _Receipts, append-only ledger, on-hand, cycle counts, lot trace (scope 3.3; forms F7-F9)._
 
 #### US-035 Receive material (F7)
+
+> **Release: V1-CORE** · Core depends on: US-007, US-037 · Absorbs US-039 (transfer, scrap, production complete). Receive: Receiving and Supervisor (P-15). Held receipts go to a Hold location and are released by a **transfer out of Hold done by Quality or Supervisor** (R-7), which replaces the deferred release/reject screen (US-036).
+
 As a **Receiving/inventory clerk**, I want to record a receipt with supplier, PO, part, quantity, lot and inspection status so that stock and traceability start at the dock.
 
 - **Scope ref:** project-scope.md section 3 (item 3.3b, 3.3c); **Scope section 5 criteria:** 3, 5
@@ -672,6 +908,9 @@ As a **Receiving/inventory clerk**, I want to record a receipt with supplier, PO
 - **Out of scope:** Purchasing, supplier ASN, scanning of labels (scope §4).
 
 #### US-036 Release or reject held material
+
+> **Release: DEFERRED (v1.1)** · Reason: a transfer out of the Hold location (US-035, R-7) releases material in the core; a formal release/reject screen is not needed to be complete.
+
 As a **Quality technician**, I want to release On Hold receipts to stock or reject them so that held material becomes available only after Quality decides.
 
 - **Scope ref:** project-scope.md section 3 (item 3.3b); **Scope section 5 criteria:** 3
@@ -685,6 +924,9 @@ As a **Quality technician**, I want to release On Hold receipts to stock or reje
 - **Out of scope:** Full MRB disposition (scope §4).
 
 #### US-037 Append-only inventory ledger
+
+> **Release: V1-CORE** · Core depends on: US-003, US-007, US-005 · Absorbs US-038 (on-hand by part, location and lot). Ledger rows are never edited or deleted (also enforced by database triggers).
+
 As a **Supervisor**, I want every stock change recorded as a signed transaction that can never be edited or deleted so that inventory history is trustworthy.
 
 - **Scope ref:** project-scope.md section 3 (item 3.3c); **Scope section 5 criteria:** 3
@@ -700,6 +942,9 @@ As a **Supervisor**, I want every stock change recorded as a signed transaction 
 - **Out of scope:** Cost, valuation, multi-currency (scope §4); ISSUE_TO_PRODUCTION transaction type (not needed in v1).
 
 #### US-038 On-hand by part, location and lot
+
+> **Release: V1-CORE (merged into US-037)**
+
 As a **Receiving/inventory clerk**, I want to see current on-hand derived from the ledger so that I always know what is where.
 
 - **Scope ref:** project-scope.md section 3 (item 3.3d); **Scope section 5 criteria:** 3
@@ -714,6 +959,9 @@ As a **Receiving/inventory clerk**, I want to see current on-hand derived from t
 - **Out of scope:** Anything listed in scope section 4 (deferred to v2).
 
 #### US-039 Transfer, scrap and production complete (F8)
+
+> **Release: V1-CORE (merged into US-035)** · Receiving and Supervisor (P-16); transfers out of Hold need Quality or Supervisor.
+
 As a **Receiving/inventory clerk**, I want to move stock between locations, scrap stock, and record finished-goods production so that the ledger reflects physical moves.
 
 - **Scope ref:** project-scope.md section 3 (item 3.3c); **Scope section 5 criteria:** 3
@@ -728,6 +976,9 @@ As a **Receiving/inventory clerk**, I want to move stock between locations, scra
 - **Out of scope:** Anything listed in scope section 4 (deferred to v2).
 
 #### US-040 Supervisor-approved manual adjustment
+
+> **Release: DEFERRED (v1.1)** · Reason: in the core, adjustments exist only as the result of an approved cycle count (US-044). Stand-alone manual adjustment adds a second approval path to build and test.
+
 As a **Supervisor**, I want to post a manual inventory adjustment with a reason so that errors found outside a cycle count can be corrected with a trace.
 
 - **Scope ref:** project-scope.md section 3 (item 3.3c); **Scope section 5 criteria:** 4
@@ -742,6 +993,9 @@ As a **Supervisor**, I want to post a manual inventory adjustment with a reason 
 - **Out of scope:** Anything listed in scope section 4 (deferred to v2).
 
 #### US-041 Shipping consumes inventory
+
+> **Release: V1-CORE** · Core depends on: US-021, US-037
+
 As a **Shipping associate**, I want the ship step to post SHIP ledger transactions for the lots shipped so that on-hand falls when product leaves.
 
 - **Scope ref:** project-scope.md section 3 (item 3.3c, 3.3d); **Scope section 5 criteria:** 3
@@ -757,6 +1011,9 @@ As a **Shipping associate**, I want the ship step to post SHIP ledger transactio
 - **Out of scope:** Backorders created automatically for short lines; allocation or reservation of stock (v2).
 
 #### US-042 Create a cycle-count list
+
+> **Release: V1-CORE (merged into US-043)** · Supervisor only (P-17).
+
 As a **Supervisor**, I want to generate a count list by ABC class or location so that counting is scheduled.
 
 - **Scope ref:** project-scope.md section 3 (item 3.3e); **Scope section 5 criteria:** 4
@@ -770,6 +1027,9 @@ As a **Supervisor**, I want to generate a count list by ABC class or location so
 - **Out of scope:** Automatic ABC-based scheduling, opportunity counts (v2).
 
 #### US-043 Blind count entry and recount (F9)
+
+> **Release: V1-CORE** · Core depends on: US-037 · Absorbs US-042 (create the count list). Entry by Receiving and Supervisor (P-18).
+
 As a **Receiving/inventory clerk**, I want to enter physical counts without seeing system quantities and recount when out of tolerance so that counts are unbiased.
 
 - **Scope ref:** project-scope.md section 3 (item 3.3e); **Scope section 5 criteria:** 4
@@ -786,6 +1046,9 @@ As a **Receiving/inventory clerk**, I want to enter physical counts without seei
 - **Out of scope:** Anything listed in scope section 4 (deferred to v2).
 
 #### US-044 Approve a count and post adjustments
+
+> **Release: V1-CORE** · Core depends on: US-043, US-037 (no longer depends on the deferred US-040; the adjustment posting is built here). Supervisor only (P-19, R-3); proposed R-4: approver is not the person who entered the count (pending Sasha).
+
 As a **Supervisor**, I want to review a counted cycle count and approve it so adjustments post so that stock matches reality with approval.
 
 - **Scope ref:** project-scope.md section 3 (item 3.3e); **Scope section 5 criteria:** 4
@@ -802,6 +1065,9 @@ As a **Supervisor**, I want to review a counted cycle count and approve it so ad
 - **Out of scope:** Anything listed in scope section 4 (deferred to v2).
 
 #### US-045 Lot trace report (R7)
+
+> **Release: V1-CORE** · Core depends on: US-035, US-041
+
 As a **Quality technician**, I want to enter a lot and see where it came from and where it went so that I can answer a customer or supplier quality question.
 
 - **Scope ref:** project-scope.md section 3 (item 3.3f, 3.4d); **Scope section 5 criteria:** 5
@@ -821,6 +1087,9 @@ As a **Quality technician**, I want to enter a lot and see where it came from an
 _One KPI module, tiles, charts C1-C6, needs-attention lists, filters (scope 3.4)._
 
 #### US-046 Single KPI module and common rules
+
+> **Release: V1-CORE** · Core depends on: US-016 · "Today" and the default period use the reporting date (US-008). Computes KPI-1 to KPI-7; KPI-8 is deferred.
+
 As a **Supervisor**, I want all KPI math to live in one place with common period and edge-case rules so that every screen shows the same numbers.
 
 - **Scope ref:** project-scope.md section 3 (item 3.4a, 3.5g); **Scope section 5 criteria:** 1, 6
@@ -837,6 +1106,9 @@ As a **Supervisor**, I want all KPI math to live in one place with common period
 - **Out of scope:** Anything listed in scope section 4 (deferred to v2).
 
 #### US-047 KPI-1 On-Time Shipment %
+
+> **Release: V1-CORE** · Core depends on: US-046, US-021 · Host for the delivery KPIs: also builds US-048 (OTIF) and US-052 (cycle time).
+
 As a **Supervisor**, I want on-time shipment % by ship date against promise date, with a toggle to requested date so that I can see delivery performance.
 
 - **Scope ref:** project-scope.md section 3 (item 3.4a); **Scope section 5 criteria:** 1, 6
@@ -853,6 +1125,9 @@ As a **Supervisor**, I want on-time shipment % by ship date against promise date
 - **Out of scope:** Anything listed in scope section 4 (deferred to v2).
 
 #### US-048 KPI-2 OTIF %
+
+> **Release: V1-CORE (merged into US-047)**
+
 As a **Supervisor**, I want on-time and in-full % per shipment so that short shipments do not look successful.
 
 - **Scope ref:** project-scope.md section 3 (item 3.4a); **Scope section 5 criteria:** 1, 6
@@ -867,6 +1142,9 @@ As a **Supervisor**, I want on-time and in-full % per shipment so that short shi
 - **Out of scope:** Anything listed in scope section 4 (deferred to v2).
 
 #### US-049 KPI-3 Packaging error rate
+
+> **Release: V1-CORE** · Core depends on: US-046, US-019, US-027, US-029 · Host for the packaging KPIs: also builds US-050 (FPY) and US-051 (rework frequency).
+
 As a **Quality technician**, I want packaging error rate with errors per 100 shipments and internal-vs-escape split so that I can see how often errors happen.
 
 - **Scope ref:** project-scope.md section 3 (item 3.4a); **Scope section 5 criteria:** 1, 6
@@ -882,6 +1160,9 @@ As a **Quality technician**, I want packaging error rate with errors per 100 shi
 - **Out of scope:** Anything listed in scope section 4 (deferred to v2).
 
 #### US-050 KPI-4 Packaging first-pass yield
+
+> **Release: V1-CORE (merged into US-049)**
+
 As a **Quality technician**, I want FPY % = shipments passing first verification with no error so that hidden rework is visible.
 
 - **Scope ref:** project-scope.md section 3 (item 3.4a); **Scope section 5 criteria:** 1, 6
@@ -896,6 +1177,9 @@ As a **Quality technician**, I want FPY % = shipments passing first verification
 - **Out of scope:** Anything listed in scope section 4 (deferred to v2).
 
 #### US-051 KPI-5 Rework frequency and minutes
+
+> **Release: V1-CORE (merged into US-049)** · Shown in the R3 report; its chart C5 is deferred (US-060).
+
 As a **Supervisor**, I want rework events per 100 shipments plus total and average minutes so that rework effort is visible.
 
 - **Scope ref:** project-scope.md section 3 (item 3.4b); **Scope section 5 criteria:** 1, 6
@@ -910,6 +1194,9 @@ As a **Supervisor**, I want rework events per 100 shipments plus total and avera
 - **Out of scope:** Anything listed in scope section 4 (deferred to v2).
 
 #### US-052 KPI-6 Shipment cycle time
+
+> **Release: V1-CORE (merged into US-047)**
+
 As a **Supervisor**, I want median and P90 hours from first Ready to Pack to Shipped so that I can see how long shipping takes.
 
 - **Scope ref:** project-scope.md section 3 (item 3.4a); **Scope section 5 criteria:** 1, 6
@@ -926,6 +1213,9 @@ As a **Supervisor**, I want median and P90 hours from first Ready to Pack to Shi
 - **Out of scope:** Anything listed in scope section 4 (deferred to v2).
 
 #### US-053 KPI-7 Inventory accuracy %
+
+> **Release: V1-CORE** · Core depends on: US-046, US-044
+
 As a **Supervisor**, I want hit-rate accuracy by ABC class from approved counts so that I can see how reliable our stock records are.
 
 - **Scope ref:** project-scope.md section 3 (item 3.4a); **Scope section 5 criteria:** 4, 6
@@ -943,6 +1233,9 @@ As a **Supervisor**, I want hit-rate accuracy by ABC class from approved counts 
 - **Out of scope:** Anything listed in scope section 4 (deferred to v2).
 
 #### US-054 Dashboard KPI tiles with target and previous period
+
+> **Release: V1-CORE** · Core depends on: US-047, US-049, US-053, US-008 · Absorbs the date-range filter of US-055 (customer and carrier filters moved to deferred US-084). Additional criterion: the dashboard shows the fixed reporting date label from US-008 (acceptance criterion 11) and the "previous period" is the equal-length period before the reporting-date period. Tiles show text status.
+
 As a **Viewer**, I want six KPI tiles showing value, target, change vs previous period and a text arrow so that I see at a glance whether we need to act.
 
 - **Scope ref:** project-scope.md section 3 (item 3.4a); **Scope section 5 criteria:** 1, 9
@@ -960,6 +1253,9 @@ As a **Viewer**, I want six KPI tiles showing value, target, change vs previous 
 - **Out of scope:** Anything listed in scope section 4 (deferred to v2).
 
 #### US-055 Dashboard filters: date range, customer, carrier
+
+> **Release: V1-CORE (merged into US-054; date range only)** · The customer and carrier filter criteria below are **not** core: see deferred US-084.
+
 As a **Viewer**, I want to filter the dashboard by date range, customer and carrier so that I can focus on one customer or period.
 
 - **Scope ref:** project-scope.md section 3 (item 3.4c); **Scope section 5 criteria:** none
@@ -975,6 +1271,9 @@ As a **Viewer**, I want to filter the dashboard by date range, customer and carr
 - **Out of scope:** Anything listed in scope section 4 (deferred to v2).
 
 #### US-056 C1 On-time shipment % by week vs target
+
+> **Release: V1-CORE** · Core depends on: US-047, US-054 · Ignore any customer/carrier filter criterion (deferred).
+
 As a **Supervisor**, I want a line chart of weekly on-time % with the target line so that I can see whether delivery is trending the right way.
 
 - **Scope ref:** project-scope.md section 3 (item 3.4b); **Scope section 5 criteria:** 9
@@ -989,6 +1288,9 @@ As a **Supervisor**, I want a line chart of weekly on-time % with the target lin
 - **Out of scope:** Anything listed in scope section 4 (deferred to v2).
 
 #### US-057 C2 Shipments per day vs packaging error rate
+
+> **Release: V1-CORE** · Core depends on: US-049, US-054 · Shows the seeded peak period; ignore any customer/carrier filter criterion (deferred).
+
 As a **Supervisor**, I want bars for shipments per day with a line for error rate so that I can see whether errors rise with volume.
 
 - **Scope ref:** project-scope.md section 3 (item 3.4b); **Scope section 5 criteria:** 9
@@ -1003,6 +1305,9 @@ As a **Supervisor**, I want bars for shipments per day with a line for error rat
 - **Out of scope:** Anything listed in scope section 4 (deferred to v2).
 
 #### US-058 C3 Packaging errors by category (Pareto)
+
+> **Release: V1-CORE** · Core depends on: US-032, US-054 (US-034 is now part of US-032) · Ignore any customer/carrier filter criterion (deferred).
+
 As a **Quality technician**, I want sorted bars of errors by category with cumulative % so that I can focus on the vital few causes.
 
 - **Scope ref:** project-scope.md section 3 (item 3.4b); **Scope section 5 criteria:** 9
@@ -1017,6 +1322,9 @@ As a **Quality technician**, I want sorted bars of errors by category with cumul
 - **Out of scope:** Anything listed in scope section 4 (deferred to v2).
 
 #### US-059 C4 Late shipments by reason
+
+> **Release: DEFERRED (v1.1)** · Reason: the core has three charts; late reasons are captured and visible on the shipment record.
+
 As a **Supervisor**, I want a horizontal bar chart of late shipments by reason code so that I can see why we are late.
 
 - **Scope ref:** project-scope.md section 3 (item 3.4b); **Scope section 5 criteria:** 9
@@ -1030,6 +1338,9 @@ As a **Supervisor**, I want a horizontal bar chart of late shipments by reason c
 - **Out of scope:** Anything listed in scope section 4 (deferred to v2).
 
 #### US-060 C5 Rework events and minutes by week
+
+> **Release: DEFERRED (v1.1)** · Reason: rework figures are available in the R3 report; chart is a repeat of the C2/C3 pattern.
+
 As a **Quality technician**, I want bars of rework events and minutes per week so that I can see whether rework effort is shrinking.
 
 - **Scope ref:** project-scope.md section 3 (item 3.4b); **Scope section 5 criteria:** 9
@@ -1043,6 +1354,9 @@ As a **Quality technician**, I want bars of rework events and minutes per week s
 - **Out of scope:** Anything listed in scope section 4 (deferred to v2).
 
 #### US-061 C6 Inventory accuracy by ABC class
+
+> **Release: DEFERRED (v1.1)** · Reason: inventory accuracy is still shown as a KPI tile (US-053/US-054); the by-class chart is an extra. First candidate to bring back if time allows, because it gives the dashboard an inventory visual.
+
 As a **Supervisor**, I want a bar chart of inventory accuracy per ABC class against target so that I can see where stock accuracy is weak.
 
 - **Scope ref:** project-scope.md section 3 (item 3.4b); **Scope section 5 criteria:** 4, 9
@@ -1057,6 +1371,9 @@ As a **Supervisor**, I want a bar chart of inventory accuracy per ABC class agai
 - **Out of scope:** Anything listed in scope section 4 (deferred to v2).
 
 #### US-062 Needs-attention lists
+
+> **Release: DEFERRED (v1.1)** · Reason: the shipment list filters (overdue, late, On Hold) and the error list show the same items.
+
 As a **Supervisor**, I want four lists on the dashboard of things needing action so that I know what to do next.
 
 - **Scope ref:** project-scope.md section 3 (item 3.4b); **Scope section 5 criteria:** none
@@ -1072,6 +1389,9 @@ As a **Supervisor**, I want four lists on the dashboard of things needing action
 - **Out of scope:** Anything listed in scope section 4 (deferred to v2).
 
 #### US-063 Click-through from KPI tiles to records
+
+> **Release: DEFERRED (v1.1)** · Reason: navigation convenience; lists and reports are reachable from the menu.
+
 As a **Viewer**, I want tiles and chart elements to open the records behind them so that I can verify and act on the numbers.
 
 - **Scope ref:** project-scope.md section 3 (item 3.4c); **Scope section 5 criteria:** none
@@ -1085,6 +1405,9 @@ As a **Viewer**, I want tiles and chart elements to open the records behind them
 - **Out of scope:** Anything listed in scope section 4 (deferred to v2).
 
 #### US-064 KPI-8 Dock-to-stock time (optional)
+
+> **Release: DEFERRED (v1.1)** · Reason: optional KPI (docs/05); not in the scope tile list.
+
 As a **Receiving/inventory clerk**, I want to optionally record putaway time on a receipt and see mean dock-to-stock hours so that receiving speed can be monitored.
 
 - **Scope ref:** project-scope.md section 3 (item 3.3b); **Scope section 5 criteria:** none
@@ -1102,6 +1425,9 @@ As a **Receiving/inventory clerk**, I want to optionally record putaway time on 
 _Reports R1-R8 with CSV export (scope 3.4; R7 Lot Trace is delivered in E3)._
 
 #### US-065 Report framework and CSV export
+
+> **Release: V1-CORE** · Core depends on: US-003, US-046, US-021, US-029, US-032, US-037 · Host for the core reports: also builds US-066 (R1), US-068 (R3) and US-069 (R4). R7 Lot Trace is US-045.
+
 As a **Viewer**, I want report tables with filters and a CSV download so that I can use the data elsewhere.
 
 - **Scope ref:** project-scope.md section 3 (item 3.4d); **Scope section 5 criteria:** none
@@ -1117,6 +1443,9 @@ As a **Viewer**, I want report tables with filters and a CSV download so that I 
 - **Out of scope:** Anything listed in scope section 4 (deferred to v2).
 
 #### US-066 R1 Shipment Log
+
+> **Release: V1-CORE (merged into US-065)**
+
 As a **Viewer**, I want a log of all shipments in range with dates, carrier, tracking, status and on-time flag so that I can review shipping activity.
 
 - **Scope ref:** project-scope.md section 3 (item 3.4d); **Scope section 5 criteria:** none
@@ -1130,6 +1459,9 @@ As a **Viewer**, I want a log of all shipments in range with dates, carrier, tra
 - **Out of scope:** Anything listed in scope section 4 (deferred to v2).
 
 #### US-067 R2 Late Shipment Report
+
+> **Release: DEFERRED (v1.1)** · Reason: R1 can be filtered to late shipments (US-024 filter and R1 columns).
+
 As a **Supervisor**, I want a report of late shipments with days late and reason so that I can discuss late causes at the weekly review.
 
 - **Scope ref:** project-scope.md section 3 (item 3.4d); **Scope section 5 criteria:** none
@@ -1143,6 +1475,9 @@ As a **Supervisor**, I want a report of late shipments with days late and reason
 - **Out of scope:** Anything listed in scope section 4 (deferred to v2).
 
 #### US-068 R3 Packaging Error and Rework Log
+
+> **Release: V1-CORE (merged into US-065)**
+
 As a **Quality technician**, I want a log of errors with category, severity, rework minutes and corrective action status so that quality can review errors and follow-up.
 
 - **Scope ref:** project-scope.md section 3 (item 3.4d); **Scope section 5 criteria:** none
@@ -1156,6 +1491,9 @@ As a **Quality technician**, I want a log of errors with category, severity, rew
 - **Out of scope:** Anything listed in scope section 4 (deferred to v2).
 
 #### US-069 R4 Inventory On-Hand
+
+> **Release: V1-CORE (merged into US-065)**
+
 As a **Receiving/inventory clerk**, I want an on-hand report by part, location and lot so that I can reconcile and export stock.
 
 - **Scope ref:** project-scope.md section 3 (item 3.4d); **Scope section 5 criteria:** 3
@@ -1169,6 +1507,9 @@ As a **Receiving/inventory clerk**, I want an on-hand report by part, location a
 - **Out of scope:** Anything listed in scope section 4 (deferred to v2).
 
 #### US-070 R5 Inventory Transaction History
+
+> **Release: DEFERRED (v1.1)** · Reason: the core on-hand screen (US-037) lists the transactions behind a lot.
+
 As a **Receiving/inventory clerk**, I want a transaction history filtered by part, lot, type and date so that I can see every movement.
 
 - **Scope ref:** project-scope.md section 3 (item 3.4d); **Scope section 5 criteria:** 3
@@ -1182,6 +1523,9 @@ As a **Receiving/inventory clerk**, I want a transaction history filtered by par
 - **Out of scope:** Anything listed in scope section 4 (deferred to v2).
 
 #### US-071 R6 Cycle Count Accuracy
+
+> **Release: DEFERRED (v1.1)** · Reason: accuracy % is on the dashboard tile; count detail is on the count screens.
+
 As a **Supervisor**, I want a report of accuracy and variances per count and per ABC class so that I can see counting performance.
 
 - **Scope ref:** project-scope.md section 3 (item 3.4d); **Scope section 5 criteria:** 4
@@ -1195,6 +1539,9 @@ As a **Supervisor**, I want a report of accuracy and variances per count and per
 - **Out of scope:** Anything listed in scope section 4 (deferred to v2).
 
 #### US-072 R8 KPI Summary (printable)
+
+> **Release: DEFERRED (v1.1)** · Reason: the dashboard already summarises the KPIs.
+
 As a **Supervisor**, I want all KPIs for the period against target on one printable page so that I can bring it to the weekly review.
 
 - **Scope ref:** project-scope.md section 3 (item 3.4d); **Scope section 5 criteria:** 1, 6
@@ -1212,6 +1559,9 @@ As a **Supervisor**, I want all KPIs for the period against target on one printa
 _Cross-cutting security, accessibility, responsiveness, tests, deployment and documentation (scope 3.5, 5, 6.7)._
 
 #### US-073 CSRF and request forgery protection
+
+> **Release: V1-CORE (merged into US-074)** · Mechanism per ADR-001 (Astro origin check plus synchronizer token).
+
 As a **Admin**, I want state-changing requests to be refused unless they carry valid proof of origin so that a malicious page cannot act as a signed-in user.
 
 - **Scope ref:** project-scope.md section 3 (item 3.5c); **Scope section 5 criteria:** 7
@@ -1225,6 +1575,9 @@ As a **Admin**, I want state-changing requests to be refused unless they carry v
 - **Out of scope:** Mechanism is decided by ADR-001; the requirement is the outcome.
 
 #### US-074 Server-side validation and safe data access
+
+> **Release: V1-CORE** · Core depends on: US-003 · Absorbs US-073 (CSRF protection).
+
 As a **Admin**, I want all input validated on the server and all data access parameterised so that injection and bad data are blocked.
 
 - **Scope ref:** project-scope.md section 3 (item 3.5d); **Scope section 5 criteria:** none
@@ -1239,6 +1592,9 @@ As a **Admin**, I want all input validated on the server and all data access par
 - **Out of scope:** Anything listed in scope section 4 (deferred to v2).
 
 #### US-075 Secrets, debug off and generic errors
+
+> **Release: V1-CORE** · Core depends on: US-001 · Absorbs US-076 (pinned dependencies, audit). The repository is **public**: the secret scan must pass and no real data may be committed.
+
 As a **Admin**, I want secrets read from environment variables, debug off by default, and generic error pages so that configuration is safe to publish.
 
 - **Scope ref:** project-scope.md section 3 (item 3.5f); **Scope section 5 criteria:** none
@@ -1253,6 +1609,9 @@ As a **Admin**, I want secrets read from environment variables, debug off by def
 - **Out of scope:** Anything listed in scope section 4 (deferred to v2).
 
 #### US-076 Pinned dependencies and vulnerability check
+
+> **Release: V1-CORE (merged into US-075)** · Audit command per ADR-001: `npm audit --audit-level=high`.
+
 As a **Admin**, I want dependencies pinned and checked for known vulnerabilities so that supply-chain risk is visible.
 
 - **Scope ref:** project-scope.md section 3 (item 3.5f); **Scope section 5 criteria:** none
@@ -1265,6 +1624,9 @@ As a **Admin**, I want dependencies pinned and checked for known vulnerabilities
 - **Out of scope:** Anything listed in scope section 4 (deferred to v2).
 
 #### US-077 Accessibility: text status, contrast, keyboard
+
+> **Release: V1-CORE** · Core depends on: US-014, US-054, US-056, US-024 · Absorbs US-078 (laptop and tablet). Applies to the three core charts (text/table alternative each) and the fixed reporting date label.
+
 As a **Viewer**, I want status, charts and forms usable without colour or a mouse so that everyone can use the app.
 
 - **Scope ref:** project-scope.md section 3 (item 3.4a, 3.4b); **Scope section 5 criteria:** 9
@@ -1279,6 +1641,9 @@ As a **Viewer**, I want status, charts and forms usable without colour or a mous
 - **Out of scope:** Anything listed in scope section 4 (deferred to v2).
 
 #### US-078 Usable on laptop and tablet
+
+> **Release: V1-CORE (merged into US-077)** · Reports R2, R5, R6, R8 in the page list below are deferred; test the core pages only.
+
 As a **Shipping associate**, I want pages to work on a laptop and a tablet so that I can use the app on the shop floor.
 
 - **Scope ref:** project-scope.md section 3 (item 3.4c); **Scope section 5 criteria:** 9
@@ -1292,6 +1657,9 @@ As a **Shipping associate**, I want pages to work on a laptop and a tablet so th
 - **Out of scope:** Phone layout, native app, offline mode (scope §4).
 
 #### US-079 KPI unit tests with hand-calculated fixtures
+
+> **Release: V1-CORE** · Core depends on: US-047, US-049, US-053 (covers KPI-1 to KPI-7 via the merged stories)
+
 As a **QA tester**, I want passing automated tests for every KPI formula so that KPI math is provably right.
 
 - **Scope ref:** project-scope.md section 3 (item 3.5g); **Scope section 5 criteria:** 6
@@ -1305,6 +1673,9 @@ As a **QA tester**, I want passing automated tests for every KPI formula so that
 - **Out of scope:** Anything listed in scope section 4 (deferred to v2).
 
 #### US-080 Route and permission tests
+
+> **Release: V1-CORE** · Core depends on: US-003, US-020, US-044, US-007, US-008 (US-004 and US-040 are deferred and removed) · Matrix-driven: every row of permissions-matrix.md and scenarios T-1 to T-14 must be tested.
+
 As a **QA tester**, I want automated tests proving restricted actions return 403 for non-permitted roles so that access control is verified.
 
 - **Scope ref:** project-scope.md section 3 (item 3.5g); **Scope section 5 criteria:** 7
@@ -1318,6 +1689,9 @@ As a **QA tester**, I want automated tests proving restricted actions return 403
 - **Out of scope:** Anything listed in scope section 4 (deferred to v2).
 
 #### US-081 Deployed demo with persistent data
+
+> **Release: V1-CORE** · Core depends on: US-011, US-075, US-083 · Absorbs US-082 (README). Additional criteria: (a) runs on the **Netlify Free plan**; credit usage is read after each production deploy and recorded, and no plan upgrade, add-on or automatic credit purchase is made without explicit user approval; (b) a deploy preview's data changes do not affect production; (c) the public site shows the DEMO banner and the fixed reporting date label; (d) the README lists the demo users and states the repository is public and fictional-only.
+
 As a **presenter**, I want the demo reachable at a public web address with data that survives restarts and redeploys so that the class can try it without installing anything.
 
 - **Scope ref:** project-scope.md section 3 (item 3.6a); **Scope section 5 criteria:** 8
@@ -1333,6 +1707,9 @@ As a **presenter**, I want the demo reachable at a public web address with data 
 - **Out of scope:** Docker, multi-environment pipelines, custom domain (not required).
 
 #### US-082 README, run steps and demo notes
+
+> **Release: V1-CORE (merged into US-081)** · Local-first run steps (`nvm use && npm ci && npm run dev`, migrations, `npm run db:reset-seed`).
+
 As a **developer or QA tester**, I want README instructions for running, testing, seeding and the deliberate omissions so that anyone can reproduce and judge the project.
 
 - **Scope ref:** project-scope.md section 3 (item 3.5g); **Scope section 5 criteria:** 8
@@ -1345,7 +1722,57 @@ As a **developer or QA tester**, I want README instructions for running, testing
   - Given the README, when read, then it states that the prototype is not a certified or production system.
 - **Out of scope:** Anything listed in scope section 4 (deferred to v2).
 
+### New stories added in T-004 (user decisions of 2026-11-25)
+
+#### US-083 Walking skeleton and proof of concept on Netlify
+
+> **Release: V1-CORE** · Core depends on: none (this is gate G0) · Epic E6 · Batch B0 · Priority: Must · Size: L · Scope ref: project-scope.md sections 3.7, 5 (criteria 8, 10), 6 step 0 · Absorbs US-009 (DEMO banner)
+
+As a **developer or QA tester**, I want a minimal deployed app (login page, DEMO banner, one saved record) built on the chosen stack so that the stack, persistence and the Free-plan budget are proven before any feature is built.
+
+- **Docs:** ADR-001 sections 5, 10, 12 and 12.1; netlify-deployment
+- **Acceptance criteria (Given/When/Then):**
+  - Given a clean checkout, when the documented local steps are followed (install, apply migration, seed, run), then the app runs locally against local Postgres with no paid service and no login to Netlify needed for local development.
+  - Given the first deploy to the Netlify Free plan, when a test record is saved and the site is redeployed, then the record is still present (persistence across redeploys and cold starts).
+  - Given a deploy preview, when its data is changed, then production data is unchanged.
+  - Given the seed run on the deployed database, when timed, then it finishes within the platform's synchronous limit, or the fallback in ADR-001 R4 is chosen and recorded.
+  - Given any page including login and error pages, when it renders, then the text "DEMO - FICTIONAL DATA" and the deploy context (production or preview) are visible without scrolling at laptop and tablet width, as real text.
+  - Given the continuous-integration run, when it executes, then type check, lint, unit tests and the first end-to-end test pass.
+  - Given the spike is complete, when credit usage is read from the Netlify account, then it is recorded in the hand-off with a projection for the term; no upgrade, add-on or credit purchase has been made.
+  - Given any ADR-001 assumption marked [A] fails (for example cold-start latency, emulator in CI), when found, then the hand-off reports **BLOCKED** and asks the user before using any fallback (fallbacks need explicit approval).
+- **Out of scope:** Any feature story; custom domain; paid plans.
+
+#### US-084 Dashboard customer and carrier filters
+
+> **Release: DEFERRED (v1.1)** · Epic E4 · Split from US-055 · Priority: Should · Size: M · Scope ref: project-scope.md section 3.8
+
+As a **Supervisor**, I want to filter the dashboard by customer and carrier so that I can see performance for one account or one carrier.
+
+- **Acceptance criteria (Given/When/Then):**
+  - Given a customer or carrier selected, when the dashboard loads, then shipment KPIs, tiles and charts C1 to C3 apply the filter and the active filters are shown in text.
+  - Given the inventory accuracy tile, when a customer or carrier filter is active, then the tile ignores the filter and says so in text (Q-16).
+- **Out of scope:** Anything beyond the date, customer and carrier filters.
+
 ## 5. Dependency summary (scope section 6 build order)
+
+### 5.1 Core build order (authoritative)
+
+**Gate G0:** ADR-001 conditionally accepted (done, 2026-11-25) **and** US-083 (proof of concept) passed. If the proof of concept fails, stop and ask the user; no fallback without approval.
+
+| Batch | V1-CORE cards (in build order) | Needs first |
+|-------|--------------------------------|-------------|
+| B0 Walking skeleton and proof of concept | US-083 | G0 |
+| B1 Auth, roles, audit, lookups, targets and reporting date, seed framework | US-001, US-003, US-005, US-007, US-008, US-011 | US-083 |
+| B2 Shipments (F1-F3), status history, list and detail | US-014, US-016, US-019, US-020, US-021, US-024 | US-003, US-007 |
+| B3 Packaging errors, rework, corrective actions, ship gate (F4-F6) | US-027, US-029, US-030, US-032 | US-016, US-019, US-021 |
+| B4 Inventory: receipts, ledger, ship posts to ledger, counts, lot trace (F7-F9) | US-037, US-035, US-041, US-043, US-044, US-045 | US-003, US-005, US-007, US-021 |
+| B5 KPI module and tests | US-046, US-047, US-049, US-053, US-079 | US-016, US-019, US-021, US-027, US-029, US-044 |
+| B6 Full seed, dashboard, three charts, reports | US-012, US-013, US-054, US-056, US-057, US-058, US-065 | B2 to B5 |
+| B7 Hardening: security, accessibility, permission tests, deployed demo, README | US-074, US-075, US-077, US-080, US-081 | US-001, US-003, B2 to B6 |
+
+Dependency check done in T-004: no V1-CORE card depends on a deferred story. Removed dependencies: US-004 and US-040 (from US-080 and US-044), US-028 (from US-030), US-022, US-031, US-034, US-038, US-042, US-048, US-050 to US-052, US-055, US-066, US-068, US-069, US-073, US-076, US-078, US-082 (now inside their hosts). Critical path: US-083, auth, roles, lookups, shipment create, status, verify, ship, error, rework, ship gate, ledger, receive, ship posts to ledger, KPI module, tiles, charts, full seed, hardening, deploy.
+
+### 5.2 Original dependency summary (T-001; superseded by 5.1)
 
 **Gate G0:** ADR-001 (stack, persistence, hosting) must be Accepted by Marcus, with Theo and Sasha consulted, before any story below is implemented. Q-01 must be settled with the user at the same time.
 
@@ -1366,6 +1793,26 @@ Notes on ordering:
 - Could and Should stories sit at the end of their epic and nothing Must depends on a Could story.
 
 ## 6. Counts summary
+
+### 6.1 By release and epic (T-004, authoritative)
+
+| Epic | V1-CORE cards | Merged into a core card | Deferred (v1.1) | Total |
+|------|--------------:|------------------------:|----------------:|------:|
+| E0 Foundation | 8 | 3 | 2 | 13 |
+| E1 Shipments | 6 | 5 | 2 | 13 |
+| E2 Packaging quality and rework | 4 | 3 | 1 | 8 |
+| E3 Inventory | 6 | 3 | 2 | 11 |
+| E4 KPIs and dashboard | 8 | 5 | 7 | 20 |
+| E5 Reports | 1 | 3 | 4 | 8 |
+| E6 Non-functional | 7 | 4 | 0 | 11 |
+| **Total** | **40** | **26** | **18** | **84** |
+
+V1-CORE cards: US-001, 003, 005, 007, 008, 011, 012, 013 (E0); 014, 016, 019, 020, 021, 024 (E1); 027, 029, 030, 032 (E2); 035, 037, 041, 043, 044, 045 (E3); 046, 047, 049, 053, 054, 056, 057, 058 (E4); 065 (E5); 074, 075, 077, 079, 080, 081, 083 (E6).
+Merged (26): US-002, 006, 009, 015, 017, 018, 022, 023, 031, 033, 034, 038, 039, 042, 048, 050, 051, 052, 055, 066, 068, 069, 073, 076, 078, 082.
+Deferred (18): US-004, 010, 025, 026, 028, 036, 040, 059, 060, 061, 062, 063, 064, 084, 067, 070, 071, 072.
+Stories counted in the first draft: 82 (76 Must); new in T-004: US-083 (core) and US-084 (deferred).
+
+### 6.2 Original counts (T-001; superseded)
 
 | Epic | Must | Should | Could | Total |
 |------|-----:|-------:|------:|------:|
@@ -1417,7 +1864,27 @@ Sizes: S = 38, M = 38, L = 6.
 
 Every story carries at least one section 3 item; the Could/optional items (delivered date, dock-to-stock) trace to 3.1b and 3.3b. Foundation stories without a direct bullet trace to 3.5 or 3.6.
 
-### 7.2 Scope section 5 acceptance criteria to stories
+### 7.0 Update for T-004
+
+Scope section 3 was rewritten as the "v1 core"; section 3 item letters in 7.1 keep their meaning, with these changes: 3.1b no longer includes Delivered (deferred US-026); 3.1f no longer includes overdue/due-soon views (US-025 deferred; the list "Overdue" filter is in US-024); 3.3a-c: US-036 and US-040 deferred; 3.4a/b: charts C4 to C6 and needs-attention lists deferred; 3.4c: only the date range filter (US-084 deferred); 3.4d: reports R2, R5, R6, R8 deferred; 3.5a: US-004 deferred; 3.5e: US-010 deferred. New items: **3.4e fixed reporting date** (US-008, US-054), **3.7 hosting and deployment** (US-083, US-081), **3.6c demo users and Admin reset** (US-011). Items covered only by deferred stories are listed in scope section 3.8. Every core item still has at least one V1-CORE story.
+
+### 7.2 Scope section 5 acceptance criteria to stories (T-004, authoritative; 11 criteria)
+
+| AC | Criterion (project-scope.md section 5) | Stories (primary evidence first) |
+|----|----------------------------------------|----------------------------------|
+| 1 | Create, pack (A), verify (B), log error, rework, ship; dashboard KPIs change | US-054, US-030, US-014, US-016, US-019, US-021, US-027, US-029, US-046, US-047, US-049 |
+| 2 | Failed verification cannot reach Shipped without error, rework and re-verification | US-030, US-019, US-021, US-027, US-029 |
+| 3 | Verifier is not the packer (server-enforced); other roles can verify | US-020, US-019, US-011 (two Shipping demo users), US-080 |
+| 4 | Receipt creates inventory; shipment consumes it; on-hand per lot; lot trace | US-041, US-035, US-037, US-045, US-013 |
+| 5 | Count variance gives approved adjustment and updates accuracy % | US-044, US-043, US-053, US-054 |
+| 6 | KPI-1 to KPI-7 unit tests with hand-calculated fixtures | US-079, US-046, US-047, US-049, US-053 |
+| 7 | Non-permitted roles get 403, unauthenticated get 401 (tested) | US-003, US-080, US-001, US-074 |
+| 8 | One command reset-seed locally; Admin reset on the deployed site | US-011, US-012, US-013, US-081 |
+| 9 | Usable on laptop and tablet; text status; accessibility scan | US-077, US-054, US-056, US-057, US-058 |
+| 10 | Runs on Netlify; records persist; previews isolated | US-083, US-081 |
+| 11 | Fixed reporting date labelled; non-empty KPIs and charts on any real date | US-008, US-054, US-012, US-013 |
+
+### 7.3 Original acceptance criteria mapping (T-001; superseded by 7.2)
 
 | AC | Criterion | Stories (primary evidence first) |
 |----|-----------|----------------------------------|
@@ -1433,7 +1900,13 @@ Every story carries at least one section 3 item; the Could/optional items (deliv
 
 Primary evidence stories end-to-end: AC1 is verified by one scripted walk-through (create, pack/verify with a failure, log error, rework, re-verify, ship, then reload the dashboard) specified in the tiles story; AC2 by the ship gate story; AC3 by the ship-consumes-inventory story with a receipt fixture; AC4 by the count approval story; AC5 by the lot trace story on a seeded lot; AC6 by the KPI test story; AC7 by the role and permission test stories; AC8 by the seed command and deployment reset; AC9 by the accessibility and responsive stories.
 
-## 8. Deferred to v2 (scope section 4, not in this backlog)
+## 8. Deferred to v1.1 and to v2
+
+### 8.1 Deferred to v1.1 / later (in this backlog, labelled `Release: DEFERRED (v1.1)`)
+
+US-004 Manage users and roles · US-010 Archive · US-025 Overdue/due-soon views · US-026 Delivered date · US-028 Pre-filled error from failed verification · US-036 Release/reject held material · US-040 Manual adjustment · US-059 C4 · US-060 C5 · US-061 C6 · US-062 Needs-attention lists · US-063 Click-through · US-064 KPI-8 · US-067 R2 · US-070 R5 · US-071 R6 · US-072 R8 · US-084 Customer and carrier filters. Reasons are on each story and in project-scope.md section 3.8.
+
+### 8.2 Deferred to v2 (scope section 4, not in this backlog)
 
 - Carrier API / real-time tracking; delivered-date import (manual optional delivered date is US-026 only)
 - EDI 856 ASN; ERP integration
@@ -1448,7 +1921,7 @@ Primary evidence stories end-to-end: AC1 is verified by one scripted walk-throug
 - Mobile app, offline mode, email/SMS alerts
 - Advanced analytics (SPC, forecasting, staffing)
 - Packer experience / training records; labor productivity
-- PostgreSQL, Docker deployment, cloud hosting (**conflicts with the Netlify requirement, see Q-01**)
+- Docker deployment, multiple long-lived environments, custom domain, paid hosting tiers (PostgreSQL and Netlify hosting are now **in** v1, see Q-01 resolution)
 - Regulatory compliance claims (AS9100, ITAR, CMMC)
 
 ## 9. Scope questions and conflicts
@@ -1459,7 +1932,7 @@ Priya does **not** edit `docs/project-scope.md`. Proposed resolutions below foll
 - **Issue:** Hosting and persistence: scope section 4 defers PostgreSQL, Docker and cloud hosting ("SQLite + local run is enough"), but the user now requires a Netlify deployment. Docs 07 section 7.1 also names Flask, SQLite and Chart.js, and SQLite files do not persist inside Netlify Functions.
 - **Where:** project-scope §4 last-but-one row; §3.5; docs/07 §7.1; software-team.md
 - **Proposed resolution:** Scope change (needs user approval): (a) amend the §4 row to defer only Docker and self-managed hosting, keeping local run supported; (b) add to §3 a bullet "Demo deployment on Netlify with a persistent managed data store"; (c) add acceptance criterion 10 "the demo is reachable at a public HTTPS address and data persists across redeploys" (covered now by US-081); (d) mark docs/07 §7.1 stack as superseded by ADR-001; (e) add a changelog line. ADR-001 decides the store; stories stay neutral.
-- **Decision / blocking:** Blocking: US-081, US-075 and every story's technical design. Owner: Marcus (ADR-001), user approval via Olivia.
+- **Decision / blocking:** **RESOLVED 2026-11-25 by user decisions 1 and 2:** ADR-001 conditionally accepted (Astro, TypeScript, Chart.js, Netlify Database/Postgres), PostgreSQL and Netlify hosting moved into v1, Flask/SQLite superseded. Scope edited (project-scope.md section 3.7, section 4, section 5 criteria 8 and 10, changelog). Remaining condition: proof of concept US-083.
 
 ### Q-02
 - **Issue:** Delivered date is optional: scope 3.1 lists "(Delivered)" in parentheses, research treats it as optional, and v1 KPIs use ship date.
@@ -1483,7 +1956,7 @@ Priya does **not** edit `docs/project-scope.md`. Proposed resolutions below foll
 - **Issue:** Seed users: scope 3.6 says six users, one per role, but verification must be done by someone other than the packer; with a single Shipping user the demo flow (AC1) cannot pass verification without a second person.
 - **Where:** scope §3.1, §3.6; docs/02 §2.4
 - **Proposed resolution:** Allow Shipping, Quality and Supervisor to verify (US-020); the demo storyline has Demo Shipper pack and Demo Quality or Demo Supervisor verify. Alternative: add a seventh user (second Shipping user). Prefer no scope change.
-- **Decision / blocking:** Confirm. Owner: Priya with Dana. Affects seed and demo script.
+- **Decision / blocking:** **RESOLVED 2026-11-25 by user decision 5:** Shipping, Quality and Supervisor may verify; the verifier must differ from the packer (server-enforced); the seed has at least two Shipping users plus Quality and Supervisor (seven demo users incl. optional Viewer, see permissions-matrix.md section 4). Scope section 2, 3.6 and 5 criterion 3 updated.
 
 ### Q-06
 - **Issue:** Seed volume versus inventory: about 300 shipments but only about 150 receipts; shipping must not drive stock negative.
