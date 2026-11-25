@@ -11,7 +11,7 @@ user-invocable: false
 | Phase | Lead agent(s) | Output | Gate to pass before next phase |
 |-------|--------------|--------|-------------------------------|
 | 0 Plan | product-manager | `docs/plan/backlog.md` (stories + acceptance criteria) | User stories cover every v1 item in `docs/project-scope.md` §3 |
-| 1 Architecture | software-architect (+ devops-engineer, security-reviewer consulted) | `docs/adr/ADR-001-stack-and-persistence.md`, ADR-002 hosting/deploy | ADR-001 **Accepted**; Netlify persistence question answered with evidence |
+| 1 Architecture | software-architect (+ devops-engineer, security-reviewer consulted) | `docs/ADR-001.md` (stack & persistence); ADR-002+ in `docs/adr/` | ADR-001 **Accepted** (done: conditional on the §12.1 PoC); PoC passes and user gives the go-ahead before Phase 3 |
 | 2 Design | data-model-specialist, ux-ui-designer, backend-developer (API contract) | `docs/data-model/schema.md`, `docs/design/ui-spec.md`, `docs/api/contract.md` | Architect reviews for consistency with ADRs |
 | 3 Foundation | devops-engineer, data-model-specialist, backend-developer | repo skeleton, CI, schema/migrations, seed script, auth & roles | CI green; seed runs in one command |
 | 4 Features | backend, frontend, dashboard-analytics developers | shipments → quality → inventory → KPIs → dashboard → reports (scope §6 order) | Each feature meets `definition-of-done` |
@@ -19,7 +19,9 @@ user-invocable: false
 | 6 Release | devops-engineer | Netlify deploy (or documented fallback per ADR-002), demo script | User approval before pushing to `main` / production deploy |
 
 ## Dependency rules
-- No implementation before ADR-001 is Accepted.
+- No full implementation until ADR-001's PoC passes and the user gives the go-ahead; only the
+  §12.1 PoC spike may run before that (locally first).
+- Netlify Free plan only: no upgrades, paid add-ons or purchases without explicit user approval.
 - Frontend and dashboard work starts only when the API contract for that area exists.
 - KPI module before dashboard charts; seed data before QA of charts.
 - Security review before any deploy.

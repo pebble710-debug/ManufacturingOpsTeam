@@ -6,8 +6,17 @@ user-invocable: false
 
 # Test strategy (v1)
 
-Test tooling follows ADR-001 (e.g., pytest for Python or Vitest/Jest for TypeScript; Playwright
-for end-to-end — Chromium is pre-installed in cloud sessions; pass `--trace off`).
+Tooling per ADR-001 (`docs/ADR-001.md` §5):
+- **Vitest** — unit tests (KPI formulas vs hand-calculated fixtures, Zod validation, auth helpers)
+  and integration tests (repos, transactions, append-only triggers) against a real in-memory
+  Postgres from **`@netlify/database-dev`** with migrations applied via `applyMigrations()`.
+- **Playwright** (Chromium) — end-to-end acceptance flows. `webServer` starts `astro dev` (emulates
+  Netlify DB), then `npm run db:reset-seed` with the small test-fixture profile. Fallback if the
+  emulator will not run headless in CI: start `@netlify/database-dev` in global setup and point
+  `NETLIFY_DB_URL` at it. Chromium is pre-installed in cloud sessions; pass `--trace off`.
+- Static checks: `astro check` + lint. Tests never touch a deployed Netlify database (credits and
+  data); everything runs locally or in CI.
+- Seed and fixtures use the fixed demo reporting date, so date-relative KPIs are deterministic.
 
 ## Required suites
 | Suite | Covers | Owner |

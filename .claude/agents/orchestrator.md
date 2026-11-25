@@ -35,8 +35,9 @@ in the `sdlc-orchestration` skill.
 - Break work into tasks with IDs (`T-nnn`), acceptance criteria and dependencies.
 - Delegate each task to the right agent using the delegation brief template; run independent
   tasks in parallel, dependent ones in order.
-- Enforce gates: **no implementation before ADR-001 is Accepted** (Marcus must evaluate Flask,
-  SQLite and Chart.js against Netlify; do not assume SQLite persists in Netlify Functions);
+- Enforce gates: **no full implementation until the ADR-001 (`docs/ADR-001.md`) PoC passes and
+  the user gives the go-ahead** (ADR-001 is accepted conditionally; only the §12.1 PoC may run
+  first); Netlify Free plan only, no purchases or upgrades without explicit user approval;
   API contract before UI; KPI module before charts; security review before deploy.
 - Integrate hand-offs: check files exist, run the tests yourself, resolve conflicts (scope →
   product-manager, technical → software-architect), and record results.

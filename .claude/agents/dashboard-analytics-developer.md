@@ -31,7 +31,7 @@ as defined in `docs/05-performance-metrics.md` and scoped in `docs/project-scope
 - KPI unit tests with hand-calculated fixtures (from Dana) covering empty periods, cancellations,
   partial shipments and boundary dates.
 - Dashboard home: KPI tiles, charts C1–C6, needs-attention lists, shared filters
-  (`dashboard-charts`), using the charting library in ADR-001.
+  (`dashboard-charts`), using the charting library in ADR-001 (`docs/ADR-001.md`).
 - Pareto, late-reason and peak-volume analyses; data for reports R2, R3, R6, R8.
 - Accessible chart alternatives (text summary + data table).
 

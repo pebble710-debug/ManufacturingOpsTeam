@@ -13,7 +13,7 @@ Formats follow the official Claude Code docs, reviewed 2026-11-25:
 |---|----------------|--------|-------|-------|--------------------|
 | 1 | `orchestrator` | Olivia | opus | purple | Plans the SDLC, assigns tasks, manages dependencies and gates, integrates results |
 | 2 | `product-manager` | Priya | sonnet | blue | Backlog, user stories, acceptance criteria, scope guard (v1 vs v2), demo script |
-| 3 | `software-architect` | Marcus | opus | orange | ADRs; evaluates Flask/SQLite/Chart.js vs Netlify; module boundaries; design reviews |
+| 3 | `software-architect` | Marcus | opus | orange | ADRs (ADR-001 at `docs/ADR-001.md`, later in `docs/adr/`); Netlify stack evaluation; module boundaries; design reviews |
 | 4 | `ux-ui-designer` | Maya | sonnet | pink | UI spec, wireframes, design tokens, form flows, accessibility |
 | 5 | `frontend-developer` | Felix | sonnet | cyan | Pages, forms F1–F10, tables, reports UI, client validation |
 | 6 | `backend-developer` | Diego | sonnet | green | API contract, business rules, auth & roles, workflows, ledger postings, audit log |
@@ -65,7 +65,7 @@ via the `skills:` frontmatter field (full content injected at start-up). Backgro
 |-------|---------|---------|
 | `sdlc-orchestration` | Phases, gates, dependency rules, delegation template, status board | orchestrator |
 | `user-stories` | Story format, traceability, scope-change procedure | product-manager |
-| `architecture-decision-records` | ADR template, criteria, ADR-001 questions | software-architect |
+| `architecture-decision-records` | ADR template, criteria, ADR-001 summary (decided) | software-architect |
 | `test-strategy` | Test suites, acceptance matrix, bug/QA report formats | qa-tester |
 | `ci-pipeline` | Scripts, GitHub Actions, env conventions | devops-engineer |
 | `agent-authoring` | Official formats, model/tool rules, roster update steps | agent-builder |
@@ -95,7 +95,7 @@ via the `skills:` frontmatter field (full content injected at start-up). Backgro
 |-------|-----------------|-----------|----------|
 | orchestrator | `docs/plan/status.md`, phase summaries, release report | everyone | Write feature code; push to `main`/deploy without user approval |
 | product-manager | `docs/plan/backlog.md`, `docs/plan/demo-script.md`, acceptance notes | orchestrator, qa, all devs | Choose tech; edit scope without user approval |
-| software-architect | `docs/adr/ADR-001…004`, `docs/architecture.md` | devops, security, data-model, backend | Let implementation start before ADR-001 is Accepted |
+| software-architect | `docs/ADR-001.md`, `docs/adr/ADR-002…005`, `docs/architecture.md` | devops, security, data-model, backend | Let full implementation start before the ADR-001 PoC passes and the user gives the go-ahead |
 | ux-ui-designer | `docs/design/ui-spec.md`, mockups, UX reviews | frontend, dashboard, product-manager | Write production code; use color alone for meaning |
 | frontend-developer | Pages, forms, tables, front-end tests | ux, backend, dashboard | Call undocumented endpoints; implement KPI math |
 | backend-developer | API, `docs/api/contract.md`, auth/roles, tests | data-model, frontend, dashboard, security | Change schema ad hoc; reinterpret KPIs |
@@ -117,13 +117,21 @@ via the `skills:` frontmatter field (full content injected at start-up). Backgro
 Each agent has `knowledge/<agent-name>/README.md` describing what durable information it keeps
 (lessons, evidence, checklists). See [`knowledge/README.md`](../knowledge/README.md).
 
-## 6. Key open decision for the team
-`docs/07-software-design.md` §7.1 proposed Flask + SQLite + Chart.js, and
-`docs/project-scope.md` §4 deferred PostgreSQL and cloud hosting to v2. The new requirement is
-**Netlify compatibility**. Netlify Functions run in an ephemeral environment, so SQLite on the
-function filesystem cannot be assumed to persist. The Software Architect must resolve this in
-ADR-001 before implementation, and any resulting scope change goes through the Product Manager
-and the user.
+## 6. Architecture decision (ADR-001)
+`docs/07-software-design.md` §7.1 originally proposed Flask + SQLite + Chart.js, and
+`docs/project-scope.md` §4 deferred PostgreSQL and cloud hosting to v2 (historical). The new
+requirement was **Netlify compatibility**: Netlify Functions do not run Python and are ephemeral,
+so SQLite cannot persist there. **ADR-001 (`docs/ADR-001.md`) resolved this** and was accepted
+conditionally by the user on 2026-11-25, pending the §12.1 proof of concept:
+
+- TypeScript, Astro SSR + `@astrojs/netlify`, Netlify Database (Postgres) via postgres.js,
+  native forward-only SQL migrations, Zod, scrypt + DB-backed sessions, Chart.js from npm,
+  Vitest + Playwright, `npm audit`, GitHub Actions.
+- Netlify **Free plan only** (300 credits/month, hard stop); no upgrades or purchases without
+  explicit user approval; local-first development.
+- No full application implementation until the PoC passes and the user gives the go-ahead.
+- Later ADRs (ADR-002 onward) live in `docs/adr/`. Scope changes go through the Product Manager
+  and the user.
 
 ## 7. Validation
 Run `python3 .claude/skills/validate-agent-team/validate.py` from the repo root (and optionally

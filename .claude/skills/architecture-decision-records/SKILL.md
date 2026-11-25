@@ -1,13 +1,16 @@
 ---
 name: architecture-decision-records
-description: How to evaluate technology options and record Architecture Decision Records (ADRs) for the ManufacturingOpsTeam prototype, including the required ADR-001 evaluation of the proposed Flask, SQLite and Chart.js stack against Netlify deployment. Use when making or reviewing any stack, hosting, persistence or structural decision.
+description: How to evaluate technology options and record Architecture Decision Records (ADRs) for the ManufacturingOpsTeam prototype; ADR-001 (stack & persistence, docs/ADR-001.md) is decided, so use the template for ADR-002 onward. Use when making or reviewing any stack, hosting, persistence or structural decision.
 user-invocable: false
 ---
 
 # Architecture Decision Records
 
-Store ADRs in `docs/adr/ADR-<nnn>-<slug>.md`. Status: Proposed → Accepted | Rejected | Superseded.
-Implementation may only rely on **Accepted** ADRs.
+**ADR-001 lives at `docs/ADR-001.md`** (user-chosen path; do not move it). Store **later ADRs
+(ADR-002 onward)** in `docs/adr/ADR-<nnn>-<slug>.md`.
+Status: Proposed → Accepted | Rejected | Superseded. Implementation may only rely on **Accepted**
+ADRs. A conditional acceptance (e.g., pending a proof of concept) allows only the named PoC work
+until the user gives the go-ahead.
 
 ## Template
 
@@ -31,21 +34,21 @@ Date: YYYY-MM-DD   Author: software-architect (Marcus)
 5. Local dev + automated tests easy (medium)
 6. Cost: free tier sufficient for a demo (medium)
 
-## ADR-001 must answer (stack & persistence)
-- Does Netlify Functions natively support the proposed **Python/Flask** runtime? Verify in current
-  Netlify docs; do not assume.
-- Netlify Functions run in an **ephemeral** environment — any file written there (e.g., a
-  SQLite file) cannot be relied on to persist or be shared between invocations. What is the
-  persistent store instead? Candidates to evaluate: Netlify Database (managed Postgres), an
-  external Postgres free tier, Netlify Blobs (object/key-value — check fitness for relational
-  data), or a read-only SQLite demo snapshot.
-- Is **Chart.js** still the right charting choice (static CDN/npm, accessible fallbacks)?
-- Which option keeps local dev simple (e.g., SQLite locally vs Postgres everywhere) without
-  creating two diverging SQL dialects?
-- What changes to `docs/07-software-design.md` §7.1 and `docs/project-scope.md` §4 (which lists
-  "PostgreSQL, Docker deployment, cloud hosting" as v2) are needed? Scope edits go through the
-  Product Manager and user approval.
+## ADR-001 — decided (historical summary)
+`docs/ADR-001.md`, accepted conditionally by the user (2026-11-25) pending the §12.1 PoC.
+It evaluated the original Flask + SQLite proposal against Netlify (Python is not a Functions
+runtime; SQLite would not persist in ephemeral functions) and chose **Option C**: TypeScript,
+Astro SSR + `@astrojs/netlify`, Netlify Database (Postgres) via postgres.js, native forward-only
+SQL migrations, Zod, scrypt + DB-backed sessions, Chart.js from npm, Vitest + Playwright,
+`npm audit`, GitHub Actions, Netlify Free plan. New ADRs must stay consistent with it or
+explicitly supersede it (with user approval).
 
-## Other expected ADRs
-ADR-002 hosting & deploy pipeline (with devops-engineer) · ADR-003 auth/session approach (with
-security-reviewer) · ADR-004 frontend approach (server-rendered vs static + API).
+## Every new ADR must also
+- Respect the Netlify **Free plan** budget (300 credits/month, hard stop); never assume a paid
+  upgrade or add-on — list it as an option needing user approval.
+- Prefer local-first verification; cite current docs with access dates.
+
+## Expected follow-up ADRs (in `docs/adr/`, see `docs/ADR-001.md` §13)
+ADR-002 hosting & deploy pipeline (with devops-engineer) · ADR-003 auth & sessions (with
+security-reviewer) · ADR-004 front-end approach · ADR-005 (candidate) data access & migration
+conventions (with data-model-specialist).

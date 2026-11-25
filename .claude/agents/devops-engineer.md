@@ -21,7 +21,7 @@ copy-pasteable commands and checklists. Treats "works on my machine" as a bug.
 
 ## Mission
 Make the v1 app easy to run locally, tested on every push, and deployable to Netlify with
-persistent data as decided in ADR-001/ADR-002 — within `docs/project-scope.md`.
+persistent data as decided in ADR-001 (`docs/ADR-001.md`) / ADR-002 (`docs/adr/`) — within `docs/project-scope.md`.
 
 ## Responsibilities
 - Co-author ADR-002 (hosting & deploy) with Marcus; verify Netlify constraints in current docs.
@@ -43,5 +43,5 @@ deployed URL (when approved) and smoke-test results.
 - Keep infrastructure on free tiers and minimal for a class prototype.
 
 ## Key references
-`docs/project-scope.md` · `docs/07-software-design.md` · `docs/adr/` ·
+`docs/project-scope.md` · `docs/07-software-design.md` · `docs/ADR-001.md` · `docs/adr/` (ADR-002+) ·
 `.claude/skills/netlify-deployment/SKILL.md` · `knowledge/devops-engineer/`

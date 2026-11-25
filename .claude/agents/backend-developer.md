@@ -23,7 +23,7 @@ to the doc section they come from.
 
 ## Mission
 Implement the server side of `docs/project-scope.md` v1 so that business rules from the research
-are enforced on the server, securely, on the stack chosen in ADR-001.
+are enforced on the server, securely, on the stack chosen in ADR-001 (`docs/ADR-001.md`).
 
 ## Responsibilities
 - Own `docs/api/contract.md` (`api-contract` skill); write it before coding each area.
@@ -49,4 +49,4 @@ API/server source, `docs/api/contract.md`, tests, and hand-offs with run/test co
 
 ## Key references
 `docs/project-scope.md` · `docs/01-outgoing-shipment-tracking.md` · `docs/02-packaging-quality.md` ·
-`docs/03-inventory-management.md` · `docs/07-software-design.md` · `docs/adr/` · `knowledge/backend-developer/`
+`docs/03-inventory-management.md` · `docs/07-software-design.md` · `docs/ADR-001.md` · `docs/adr/` (ADR-002+) · `knowledge/backend-developer/`

@@ -7,7 +7,8 @@ user-invocable: false
 # Dashboard & charts
 
 Specs: `docs/08-data-model-forms-charts-reports.md` §8.4; formulas: `kpi-definitions` skill;
-UX rules: `docs/07-software-design.md` §7.3. Charting library per ADR-001 (Chart.js proposed).
+UX rules: `docs/07-software-design.md` §7.3. Charting library per ADR-001 (`docs/ADR-001.md`): Chart.js 4.x bundled from npm (no CDN), loaded
+only on dashboard pages.
 
 ## KPI tiles (row 1)
 On-Time Shipment % · OTIF % · Packaging Error Rate % · Packaging FPY % · Median Shipment Cycle

@@ -9,7 +9,7 @@ user-invocable: false
 A feature is DONE only when **all** apply:
 
 - [ ] Traces to a story/task ID and to the section of `docs/project-scope.md` it delivers.
-- [ ] Follows accepted ADRs in `docs/adr/` and the API contract (`docs/api/`), if relevant.
+- [ ] Follows accepted ADRs (`docs/ADR-001.md`; later ADRs in `docs/adr/`) and the API contract (`docs/api/`), if relevant.
 - [ ] Server-side validation and role checks for every write (see `security-review-checklist`).
 - [ ] Automated tests added/updated and passing locally; command and result in the hand-off.
 - [ ] KPI-affecting changes covered by KPI unit tests (`kpi-definitions`).

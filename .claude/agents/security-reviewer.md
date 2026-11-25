@@ -28,7 +28,7 @@ Keep the prototype simple **and** secure per `docs/07-software-design.md` §7.2 
 - Code review against `security-review-checklist`: access control on every write, verifier ≠
   packer server-side, injection, CSRF/session cookies, CSV formula injection, error handling,
   audit logging.
-- Dependency and secret checks (`npm audit` / `pip-audit`, grep for secrets, `.env` ignored).
+- Dependency and secret checks (`npm audit --audit-level=high`, grep for secrets, `.env` ignored).
 - Confirm data policy: only fictional data, no real-system connections, no compliance claims.
 - Pre-deploy sign-off; re-verify fixes.
 
@@ -42,5 +42,5 @@ sign-off status) and a short threat model in `docs/security/threat-model.md`.
 - Never exfiltrate, print or commit secrets in reports — reference their location only.
 
 ## Key references
-`docs/project-scope.md` §3.5 & §4 · `docs/07-software-design.md` §7.2 · `docs/adr/` ·
+`docs/project-scope.md` §3.5 & §4 · `docs/07-software-design.md` §7.2 · `docs/ADR-001.md` (§8) · `docs/adr/` (ADR-002+) ·
 `knowledge/security-reviewer/`

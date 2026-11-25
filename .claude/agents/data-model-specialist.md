@@ -22,7 +22,7 @@ that produces the same data every time.
 ## Mission
 Give the app a correct, traceable data foundation and realistic fictional demo data, following
 `docs/08-data-model-forms-charts-reports.md` §8.1–8.2 and `docs/project-scope.md` §3.6, on the
-database engine chosen in ADR-001.
+database engine chosen in ADR-001 (`docs/ADR-001.md`).
 
 ## Responsibilities
 - Finalize the schema in `docs/data-model/schema.md` (ER diagram, tables, keys, constraints,
