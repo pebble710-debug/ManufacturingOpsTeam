@@ -1,0 +1,20 @@
+---
+export const prerender = false;
+---
+<html lang="en">
+  <head><meta charset="utf-8" /><title>POC spike</title></head>
+  <body>
+    <p>DEMO – FICTIONAL DATA (spike)</p>
+    <h1 id="h">Cobalt Ridge spike</h1>
+    <canvas id="c" width="300" height="150" aria-label="demo chart"></canvas>
+    <script>
+      import { Chart, BarController, BarElement, CategoryScale, LinearScale } from 'chart.js';
+      Chart.register(BarController, BarElement, CategoryScale, LinearScale);
+      new Chart(document.getElementById('c') as HTMLCanvasElement, {
+        type: 'bar',
+        data: { labels: ['Shipped', 'Verified'], datasets: [{ label: 'Shipments', data: [3, 7] }] },
+      });
+      document.body.dataset.chart = 'ready';
+    </script>
+  </body>
+</html>
