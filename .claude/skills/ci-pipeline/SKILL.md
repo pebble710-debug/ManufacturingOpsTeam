@@ -6,7 +6,7 @@ user-invocable: false
 
 # CI pipeline & developer experience
 
-Stack per ADR-001 (`docs/ADR-001.md` §5): Node.js 24 LTS, npm, TypeScript, Astro, Vitest,
+Stack per ADR-001 (`docs/ADR-001.md` §5): Node.js 22.23.5 (22 LTS), npm, TypeScript, Astro, Vitest,
 Playwright. Deploys happen through Netlify's Git integration, not CI.
 
 ## Repo conventions

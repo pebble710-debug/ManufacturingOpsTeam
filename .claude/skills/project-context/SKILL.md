@@ -35,7 +35,7 @@ The fictional company is **Cobalt Ridge Components, Inc.** (Riverton plant).
 
 | Concern | Choice |
 |---------|--------|
-| Language / runtime | TypeScript (strict), Node.js 24 LTS (`.nvmrc`) |
+| Language / runtime | TypeScript (strict), Node.js 22.23.5 (22 LTS, `.nvmrc`; Astro 7 needs ≥ 22.23.4); Astro 7.4.13 + `@astrojs/netlify` 8.2.14 pinned |
 | App | Astro SSR (`output: 'server'`) + `@astrojs/netlify`; pages + `/api/v1/*` endpoints run as Netlify Functions; one Netlify site |
 | Database | Netlify Database (managed Postgres) everywhere; local emulator via `astro dev` / `netlify dev`; `@netlify/database-dev` in tests |
 | Data access | postgres.js tagged templates in `src/lib/db.ts` + `src/lib/repos/`; no ORM; `sql.unsafe` banned |
