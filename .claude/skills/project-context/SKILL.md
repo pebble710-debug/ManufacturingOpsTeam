@@ -52,7 +52,7 @@ The fictional company is **Cobalt Ridge Components, Inc.** (Riverton plant).
 - Netlify **Free plan** only; no purchases or upgrades without explicit approval.
 - The GitHub repo is **public** (Free plan does not support org-owned private repos for contributors).
 - **Verifier ≠ packer** is always enforced server-side; **Quality and Supervisor** users are
-  allowed to verify, so the demo works with one seeded user per role.
+  allowed to verify. Seed 7 fictional demo users (incl. two Shipping users) per `docs/plan/permissions-matrix.md` §4.
 - A **fixed demo reporting date** anchors the seed and the dashboard's "today" (reproducible KPIs).
 - Application roles: **Admin, Supervisor, Shipping, Receiving, Quality**.
 

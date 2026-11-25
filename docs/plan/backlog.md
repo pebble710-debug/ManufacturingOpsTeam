@@ -1968,7 +1968,7 @@ Priya does **not** edit `docs/project-scope.md`. Proposed resolutions below foll
 - **Issue:** Default "last 30 days" period versus a seed that ends on a fixed date: viewed weeks later, the default dashboard (and the deployed demo) would be empty.
 - **Where:** docs/05 §5.2; kpi-definitions; scope §3.6
 - **Proposed resolution:** Seed anchors on a fixed "as of" date (2026-11-25); add a setting `demo_as_of_date` the dashboard treats as today when set. Today's real date otherwise. Needs a small story if accepted.
-- **Decision / blocking:** Decide with user; Owner: Kenji and Dana. Non-blocking until B6.
+- **Decision / blocking:** **RESOLVED 2026-11-25 by user decision 6:** fixed demonstration reporting date (2026-11-25), clearly labelled on the dashboard, Admin-editable, with a switch to live date. Built in US-008 and US-054; scope section 3.4 and criterion 11. Open design point: see Q-23.
 
 ### Q-08
 - **Issue:** KPI period attribution: KPI-3 says "verified or shipped" and "verification/ship date"; customer escapes are found after the period; FPY uses first verification date.
@@ -1992,7 +1992,7 @@ Priya does **not** edit `docs/project-scope.md`. Proposed resolutions below foll
 - **Issue:** Role permissions: docs/07 §7.2 lists capabilities per role but not whether Supervisor inherits Shipping/Receiving/Quality rights, who may put a shipment On Hold, or who may verify.
 - **Where:** docs/07 §7.2; docs/04 §4.2
 - **Proposed resolution:** Use the matrix in section 1: Supervisor is a superset except user management; Admin manages users and the audit log and can view everything; Quality may verify and hold/release. Marked [A].
-- **Decision / blocking:** Confirm; Owner: Priya with Sasha. Blocking for US-003 and US-080.
+- **Decision / blocking:** **RESOLVED 2026-11-25 by user decisions 5 and 7** (roles Admin, Supervisor, Shipping, Receiving, Quality; Viewer optional; simple matrix, admin functions restricted, enforced server-side). The matrix now lives in [permissions-matrix.md](permissions-matrix.md) as a DRAFT pending Sasha's review; US-003 and US-080 proceed against it.
 
 ### Q-12
 - **Issue:** Verifier differs from packer: scope says enforced, docs/02 says configurable.
@@ -2048,8 +2048,33 @@ Priya does **not** edit `docs/project-scope.md`. Proposed resolutions below foll
 - **Proposed resolution:** Display in a single configurable demo time zone, defaulting to UTC; ship date is a calendar date, other times are timestamps.
 - **Decision / blocking:** Non-blocking.
 
+### Q-21 (new, T-004)
+- **Issue:** Viewer role: keep or drop? User left it open.
+- **Where:** user decision 7; permissions-matrix.md
+- **Proposed resolution:** Keep as optional read-only guest (`demo.viewer`): almost no build cost, gives a safe account to share on a public site, adds one negative test row. Drop it if Sasha or the user prefers five roles.
+- **Decision / blocking:** Non-blocking. Owner: user, Sasha.
+
+### Q-22 (new, T-004)
+- **Issue:** The core has no manage-users screen (US-004 deferred); users come from the seed.
+- **Where:** US-004; permissions-matrix.md P-23
+- **Proposed resolution:** Accept for the core; the Admin-only rule is defined and tested once the screen is built. Bring US-004 back first if the user wants it in v1.
+- **Decision / blocking:** Non-blocking. Owner: user to confirm.
+
+### Q-23 (new, T-004)
+- **Issue:** Fixed reporting date versus live-entered records: a shipment shipped during the demo (real date later than 2026-11-25) would fall outside the default period and the KPIs would not change (acceptance criterion 1).
+- **Where:** project-scope.md section 3.4; US-008
+- **Proposed resolution:** While fixed mode is on, the business clock is the reporting date plus the real time of day for defaults and KPI timestamps; audit timestamps stay real UTC.
+- **Decision / blocking:** Blocking for US-008, US-046. Owner: Marcus and Kenji.
+
+### Q-24 (new, T-004)
+- **Issue:** Merged host stories are larger cards (US-014, US-016, US-024, US-032, US-035, US-065).
+- **Where:** section 3.3
+- **Proposed resolution:** Olivia splits them into tasks per acceptance-criteria group when assigning; story IDs and acceptance criteria stay stable.
+- **Decision / blocking:** Non-blocking. Owner: Olivia.
+
 ## 10. Revision log
 
 | Date | Change | By |
 |------|--------|----|
 | 2026-11-25 | First draft of v1 backlog (T-001) | Priya |
+| 2026-11-25 | T-004: V1-CORE cut (40 cards, 26 merged, 18 deferred, 84 stories); release label on every story; new US-083 and US-084; dependencies re-checked; counts, traceability and AC mapping rewritten; Q-01, Q-05, Q-07, Q-11 resolved; Q-21 to Q-24 added; permissions-matrix.md created | Priya |
