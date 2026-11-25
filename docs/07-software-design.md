@@ -5,9 +5,34 @@
 Goal: a **simple, secure, user-friendly** web dashboard that a small team of AI coding agents can
 build, test and demo within a class assignment.
 
-## 7.1 Architecture (proposed)
+## 7.1 Architecture — **Superseded by ADR-001 ([docs/ADR-001.md](ADR-001.md))**
 
-**[P]** Keep it a single, small, monolithic web app with a relational database.
+> **Confirmed change (2026-11-25):** the stack below is set by ADR-001, accepted by the user
+> 2026-11-25, conditional on the proof of concept (T-007). The original proposal is kept further
+> down, under *Historical record*, for traceability. Edited per ADR-001 §11.2.
+
+**[P]** Keep it a single, small, monolithic web app with a relational database (unchanged intent).
+
+**Current stack (per ADR-001):**
+
+| Layer | Decision | Why |
+|-------|----------|-----|
+| Backend | **[P]** TypeScript + **Astro (SSR)** on Netlify Functions via `@astrojs/netlify` | **[R]** Netlify Functions support TypeScript, JavaScript and Go, not Python (ADR-001 F1); one deployable |
+| Database | **[P]** **Netlify Database** (managed Postgres) via postgres.js; native SQL migrations; Postgres locally via the Netlify emulator | **[R]** Function runtime is ephemeral, so a SQLite file would not persist (ADR-001 F2, F4–F6) |
+| Frontend | **[P]** Server-rendered Astro pages + plain CSS; **Chart.js** bundled from npm | No SPA; auto-escaping; no CDN scripts |
+| Auth | **[P]** DB-backed sessions; scrypt (`node:crypto`) password hashing; see ADR-003 | Zero extra dependencies; sessions survive ephemeral functions |
+| Tests | **[P]** Vitest (KPI unit + DB integration via `@netlify/database-dev`) + Playwright e2e | KPIs must be provably correct; acceptance flows tested end to end |
+| Seed data | **[P]** Deterministic TS generator; `npm run db:reset-seed`; Admin demo reset | Reproducible demos, locally and on the deployed site |
+
+- **[P]** The stack is fixed by ADR-001; SQLite is not used because Netlify Functions are ephemeral
+  and do not run Python.
+- **[P]** Module layout: `src/lib/repos/{shipments,quality,inventory,admin}` (shipments; quality =
+  errors, rework; inventory = receipts, transactions, cycle counts; admin = users, lookups, targets),
+  `src/lib/kpi/` (KPI module, used by dashboard tiles and charts) and `src/pages/reports/`.
+- **[P]** Put all KPI math in **one service module** (`src/lib/kpi/`) with unit tests; charts and
+  reports call it. This prevents the same KPI being calculated two different ways.
+
+### Historical record — original proposal (superseded by ADR-001; not to be implemented)
 
 | Layer | Recommendation | Why |
 |-------|---------------|-----|
@@ -18,13 +43,12 @@ build, test and demo within a class assignment.
 | Tests | pytest: KPI formula unit tests + route tests | KPIs must be provably correct |
 | Seed data | A `seed` script that generates deterministic fictional data | Reproducible demos |
 
-- **[A]** Equivalent stacks (Node/Express + SQLite, Django) are fine; the important part is that
-  the team picks **one** and documents it before coding.
-- **[P]** Suggested module layout: `shipments/`, `quality/` (errors, rework), `inventory/`
-  (receipts, transactions, cycle counts), `dashboard/` (KPI service + charts), `admin/`
-  (users, lookups, targets), `reports/`.
-- **[P]** Put all KPI math in **one service module** with unit tests; charts and reports call it.
-  This prevents the same KPI being calculated two different ways.
+- *(historical)* **[A]** Equivalent stacks (Node/Express + SQLite, Django) are fine; the important
+  part is that the team picks **one** and documents it before coding. → Replaced: the stack is fixed
+  by ADR-001.
+- *(historical)* **[P]** Suggested module layout: `shipments/`, `quality/` (errors, rework),
+  `inventory/` (receipts, transactions, cycle counts), `dashboard/` (KPI service + charts), `admin/`
+  (users, lookups, targets), `reports/`. → Mapped to the `src/lib/…` layout above.
 
 ## 7.2 Security (proportionate for a prototype)
 
@@ -40,17 +64,17 @@ build, test and demo within a class assignment.
 - **[R]** OWASP ASVS is the companion checklist of verifiable web-app security requirements.
   ([OWASP ASVS (GitHub)](https://github.com/OWASP/ASVS))
 
-**[P]** v1 security checklist (mapped to OWASP):
+**[P]** v1 security checklist (mapped to OWASP; rows 2–7 updated for the ADR-001 stack, 2026-11-25):
 
 | # | Control | OWASP |
 |---|---------|-------|
 | 1 | Every route requires login; role checked **server-side** on every write | A01 |
-| 2 | Parameterized queries / ORM only; no string-built SQL | A05 |
-| 3 | Template auto-escaping on; no raw HTML from user input | A05 |
-| 4 | CSRF tokens on all forms | A01/A06 |
-| 5 | Passwords hashed (argon2/bcrypt); no default passwords in production mode; demo users only in seed data | A04/A07 |
-| 6 | Secret key from environment variable, never committed; debug mode off outside dev | A02 |
-| 7 | Pin dependency versions; run `pip-audit` (or equivalent) | A03 |
+| 2 | Parameterized queries only; no string-built SQL — postgres.js tagged templates; `sql.unsafe` banned | A05 |
+| 3 | Template auto-escaping on; no raw HTML from user input — Astro expression auto-escaping; no `set:html` with user data | A05 |
+| 4 | CSRF tokens on all forms — Astro `checkOrigin` + synchronizer CSRF token | A01/A06 |
+| 5 | Passwords hashed (argon2/bcrypt/scrypt); no default passwords in production mode; demo users only in seed data | A04/A07 |
+| 6 | Secrets from environment variables, never committed — env vars in Netlify (`NETLIFY_DB_URL` injected); no signing secret needed for random session tokens; debug mode off outside dev | A02 |
+| 7 | Pin dependency versions (lockfile); run `npm audit --audit-level=high` | A03 |
 | 8 | Server-side input validation (types, ranges, required fields, allowed lists) | A06 |
 | 9 | Append-only audit log: user, timestamp, action, record, old→new | logging |
 | 10 | Generic error pages; no stack traces to users | A02 |
@@ -102,6 +126,8 @@ they were consciously deferred.
 - **[P]** Status changes are only possible via defined transitions with required fields.
 - **[P]** Soft-delete (archive) instead of hard-delete for shipments, errors and transactions.
 - **[P]** Store timestamps in UTC, display in local time.
+- **[P]** Timestamps stored as Postgres `timestamptz`; append-only tables protected by DB triggers;
+  migrations forward-only (expand/contract). *(Added per ADR-001 §11.2, 2026-11-25.)*
 
 ## 7.5 Agent-team working agreements (proposed)
 
