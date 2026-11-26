@@ -621,7 +621,7 @@ Response 200:
   "kpis": [ { "kpi_id": 1, "key": "on_time_pct", "name": "On-Time Shipment %", "unit": "%", "tile": true,
               "value": 96.66666, "value_1dp": 96.7, "previous_value": 94.2, "delta": 2.46, "trend": "Up",
               "target": 95, "target_comparison": ">=", "meets_target": true,
-              "numerator": 29, "denominator": 30, "extra": {} } ] } }
+              "numerator": 29, "denominator": 30, "extra": {}, "definition": "Shipments with ship date on or before the promise date divided by shipments shipped, x 100." } ] } }
 ```
 `kpis` order and keys: `on_time_pct` (1), `otif_pct` (2), `pkg_error_rate_pct` (3; `extra`: `errors_per_100_shipments`, `internal_catches`, `customer_escapes`), `fpy_pct` (4), `cycle_time_median_h` (6; `extra.p90_h`), `inventory_accuracy_pct` (7), `rework_frequency_pct` (5; `tile: false`, `extra`: `rework_events`, `total_rework_minutes`, `avg_rework_minutes`; shown in the error/rework report). `value` is full precision, `null` for "No data" (with `trend`, `delta`, `meets_target` also `null`); `trend` ∈ Up, Down, Flat (delta rounds to 0.0 at one decimal) or `null`; `target_comparison` ∈ `>=`, `<`, `<=` per docs/05 §5.3. Same inputs always give the same value as every chart and report (US-046). **[Kenji to confirm]**.
 
@@ -722,3 +722,93 @@ Scope §3 items: 3.1 → E-05..E-16 · 3.2 → E-17..E-28 · 3.3 → E-29..E-41 
 
 ---
 
+## 13. Permission and security test checklist (US-080, S-01 to S-31, matrix T-1 to T-22)
+Regenerated 2026-11-26 from `docs/plan/permissions-matrix.md` (REVIEWED) §2, §3, §5. For every row the test asserts the status code, that **nothing changed** (row counts, ledger sums, status), and that an `ACCESS_DENIED` audit row exists for signed-in 403s. For every write route also run (S-07, S-08, T-14, T-17): no token → 403 `CSRF_INVALID`; forged `Origin` + JSON → 403; `text/plain`, missing type and form types → 415; body with an actor field → 400 `UNKNOWN_FIELD` (T-16); GET of the URL → 405 (T-21); no session → 401 (T-12). The Viewer calls **every** write endpoint and gets 403 (T-10). S-01 compares the `permissions.ts` map with the table below.
+
+| Action (matrix) | Endpoints | Allowed | Must get 403 | Matrix scenarios |
+|-----------------|-----------|---------|--------------|------------------|
+| P-01 | E-02, E-03, E-04 | all roles | n/a (login: wrong password, unknown user and deactivated user are identical 401; 6th failure in 15 min → 429) | T-12 |
+| P-02, P-03 | all GET endpoints except E-51 | all six roles | none (401 when anonymous) | T-12 |
+| P-04 | E-06, E-08 | SUP, SHP | ADM, RCV, QUA, VWR | T-6, T-10 |
+| P-05, P-06 | E-09, E-10, E-16 | SUP, SHP | ADM, RCV, QUA, VWR | T-6, T-10 |
+| P-07 + R-1 | E-11 | SUP, SHP, QUA, **not the current packer** | ADM, RCV, VWR (`FORBIDDEN_ROLE`); the packer in any role (`VERIFIER_SAME_AS_PACKER`, no verification row, concurrent verify cannot self-verify) | T-1 to T-5, T-16 |
+| P-08 | E-12 | SUP, SHP | ADM, RCV, QUA, VWR | T-6, T-8 |
+| P-09 | E-13 | SUP, SHP, QUA | ADM, RCV, VWR | T-6 |
+| P-10 (R-6) | E-14 | SUP, QUA | SHP, RCV, ADM, VWR | T-22 |
+| P-11 + R-5 | E-15 | SUP (any pre-ship status); SHP only Planned / Ready to Pack | SHP at any other status (`FORBIDDEN_CANCEL_AT_STATUS`), QUA, RCV, ADM, VWR | T-9 |
+| P-12 + R-8 | E-18 | SUP, QUA (both stages); SHP Before ship on an unshipped shipment | SHP with stage After ship or a Shipped shipment (`FORBIDDEN_AFTER_SHIP_ERROR`), ADM, RCV, VWR | T-6, T-18 |
+| P-13 | E-24, E-25 | SUP, SHP, QUA | ADM, RCV, VWR | T-6 |
+| P-14 | E-20, E-21, E-22, E-27, E-28 | SUP, QUA | SHP, RCV, ADM, VWR | |
+| P-15 | E-30 | SUP, RCV | SHP, QUA, ADM, VWR | T-6 |
+| P-16 + R-7 | E-34 | SUP all; RCV for non-Hold sources; QUA only transfers into/out of Hold and scrap at Hold | RCV transfer or scrap from Hold (`FORBIDDEN_HOLD_RELEASE`); QUA anything else (`FORBIDDEN_NON_HOLD_TXN`); SHP, ADM, VWR | T-13, T-19 |
+| P-17 | E-36 | SUP | SHP, RCV, QUA, ADM, VWR | |
+| P-18 | E-38, E-39 | SUP, RCV | SHP, QUA, ADM, VWR | |
+| P-19 + R-3, R-4 | E-40 | SUP who entered or recounted no line | RCV, SHP, QUA, ADM, VWR (`FORBIDDEN_ROLE`); the SUP who entered or recounted any line (`APPROVER_SAME_AS_COUNTER`) | T-7, T-8, T-15 |
+| P-20 | E-43, E-44 | ADM, SUP | SHP, RCV, QUA, VWR | T-7 |
+| P-21 | E-46 | ADM, SUP | SHP, RCV, QUA, VWR | T-7 |
+| P-22 | E-47 | ADM | SUP and all others | T-11 |
+| P-23 | (no endpoint in core) | ADM (v1.1) | every `/users` request is 404 now | T-11 |
+| P-24 | E-51 | ADM | all others | T-11 |
+| P-25 + R-9 | E-52 | ADM | non-Admin 403 with the flag on; **flag off → 404 for every signed-in role**; a second accepted reset within 10 min → 429; reset ends all sessions; audit row exists after the reseed | T-11, T-20 |
+
+Fixture checks owned by the domain tests: AC-5 count (100 / 96, class A, recount 96 → ADJUST −4, on-hand 96); transfer fixture (receipt 100, ship 30, transfer 20 out, scrap 5 → source 45, destination 20); ship fixture (receipt 100 of `L2611-004`, ship 40 → 60; ship 70 more → 409 `INSUFFICIENT_STOCK` with `available`); R1 row count equals the list count for the same filters; CSV guard (`=1+1`, `+x`, `-2+3`, `@SUM(A1)`, tab+`=1` prefixed with `'`; numeric −5 stays −5; `Content-Type: text/csv`); forced DB error → generic 500 with `request_id`, no stack text and no partial ledger/audit rows (S-22); audit and logs contain no password, token, IP or URL (S-24).
+
+---
+
+## 14. Decisions, answers and open items
+
+### 14.1 Schema requests for Dana (docs/08 names kept; the §2 enumerations are stable and unchanged by this revision)
+1. New table **`shipment_verification`**: `id, shipment_id, attempt_no, result (Pass|Fail), verified_by, packer_id, verified_at, business_date, checklist jsonb, failed_items text[], note` (unique `shipment_id, attempt_no`). Needed by US-019/US-020/FPY; not in docs/08.
+2. `shipment`: add `rework_origin` (enum, nullable), `held_from_status`, `hold_owner_dept`, `verified_at`. `shipment_line`: add `short_note`. (`packed_by`, `verified_by`, `hold_reason_id`, `late_reason_id` exist.)
+3. `shipment_status_history`: add `business_date date not null`. `rework_event`: add `completed_business_date`; `reverified_ok` is server-managed. `cycle_count`: add `scope_abc_class`, `scope_location_id`, `submitted_at`, `approved_business_date`. `cycle_count_line`: add `counted_by`, `counted_at`, `recounted_by`, `recounted_at`, `adjustment_txn_id` (R-4 needs both counter columns).
+4. `inventory_transaction`: add `transfer_group` (uuid or bigint) to link the two TRANSFER legs; `lot_number` stored upper-case; append-only triggers on it, `shipment_status_history` and `audit_log` (ADR-001 §5).
+5. `reason_code`: add `active`. `setting`: keys listed in §8 plus `last_demo_reset_at`. `audit_log`: no hard FK to `user` that would block the demo reset; **no IP column**.
+6. `session` table: SHA-256 of token, `user_id`, `csrf_token`, `created_at`, `last_seen_at`, `expires_at` (no anonymous rows now that E-01 is withdrawn). `login_attempts` (key hash, window start, count) for the DB-backed rate limit; client key = salted SHA-256 of the IP, salt stored in settings (security plan §3.3).
+7. Sequences for `SH-`, `PE-`, `RC-`, `CC-` numbers (start above the seed maxima); `minutes` on `rework_event` either generated or computed in the repo.
+
+### 14.2 Open items (owner)
+| ID | Item | Owner |
+|----|------|-------|
+| Q-A | **Blocking.** Business clock vs KPI period anchors (§1.6): confirm the `business_date` columns (this contract) versus storing event timestamps with `business_now`. Without one of them KPI-3/4/5/7 do not move for live records on any real date after the reporting date (AC-1, AC-11). | Marcus, Kenji, Dana, Olivia |
+| Q-B | `reopen` has no row in the reviewed matrix; treated as P-06; `contain` treated as P-14. Add explicit rows. | Priya |
+| Q-D | KPI-7 hit-rate: tolerance is evaluated on the **first** count; the recount only affects the adjustment quantity. Confirm against docs/03 §3.3. | Kenji |
+| Q-G | Supervisor may edit `notes` on Shipped/Cancelled shipments (US-015 text) though P-04 says "before it ships". | Priya |
+| Q-H | Resolved by R-5: Shipping cancelling from On Hold (or any status after Ready to Pack) is 403. Priya to align the US-017 text. | Priya |
+| Q-I | Formats [A]: tracking `^[A-Za-z0-9-]{1,40}$`, lot `^[A-Z0-9][A-Z0-9-]{2,29}$`, hold owner departments, over-shipping refused, SHIP locations limited to Stock/FG/Shipping. | Priya, Marcus |
+| Q-J | Edit-after-verify trigger fields (E-08: customer, PO, line part/qty/lot/location). | Priya |
+| Q-K | Rework-gate "same episode" is derived from timestamps (G1/G2); a `rework_episode` counter on `shipment` would be sturdier. | Dana |
+| Q-L | Snapshot drift on approval is a warning, not a block; no count freeze in v1. | Priya, Marcus |
+| Q-N | `GET /lookups/users` exposes display names and roles of active users to every role (owner dropdown). | Sasha |
+| Q-P | KPI and chart response shapes (§9). | Kenji |
+| Q-Q | Optional abuse controls (write cap 429, demo read-only 503; security plan PD-5/PD-7 "Should") are specified but not in V1-CORE unless Olivia adds them. | Olivia, Sasha |
+| Q-R | Order for R-1/R-4 (§1.3 step 5): identity rules are checked before the 409 status checks, as in matrix §1. The security plan's "follow-up read decides 403 vs 409" gives the same result in every in-state case; confirm no objection. | Sasha |
+| Q-S | Login form pre-session token left to ADR-003 (a POST if added). | Marcus, Sasha |
+
+**Resolved by the reviewed matrix and security plan:** Q-C (no pre-login token, E-01 withdrawn), Q-E (R-4 accepted, `APPROVER_SAME_AS_COUNTER`), Q-F (R-7 extended to scrap; Quality limited to Hold moves), Q-M (reset audit row re-inserted after the reseed, security plan §9), Q-O (all forms may use fetch JSON; page handlers share the service layer, §1.3).
+
+### 14.3 Answers to the UI spec questions addressed to the back end (docs/design/ui-spec.md §14)
+| # | Answer |
+|---|--------|
+| 14.1 | All timestamps are UTC ISO strings; the UI formats them in UTC and appends "UTC" (Q-20 default). "Now" defaults (arrival, started, completed, detected, ship date) use `business_now` / `business_today` (§1.6): in fixed mode the reporting date plus the real time of day; audit timestamps are real UTC. `GET /me` and `GET /settings` return `business_today`. Default values come from the server, never the browser clock. |
+| 14.2 | Confirmed: default period = 30 days inclusive ending on `business_today`: 2026-10-27 to 2026-11-25; previous period 2026-09-27 to 2026-10-26 (30 days each). Returned by E-48 as `period` and `previous_period`. |
+| 14.3 | Confirmed (§7.1, E-37/E-38): system quantity, variance and tolerance result are **absent from the response body** for every role while the count is Open; present for SUP and ADM when Counted; present for all roles once Approved. Counters get only `recount_required`. |
+| 14.4 | **R-4 is adopted** (matrix R-4, T-15). E-40 returns 403 `APPROVER_SAME_AS_COUNTER`; E-37 returns `can_approve` and `caller_entered_lines` so S19 can show the Unavailable state. |
+| 14.5 | `reverified_ok` is **server-managed** (set true on the episode's completed rework events when a passing verification follows); the user does not type it. "Start packing again" is `reopen` (E-16) and **is gated** on a logged Before-ship error and a completed rework event (G1/G2, §1.7). In addition `verify` or `ship` attempted while the shipment is in Rework returns 409 `REWORK_GATE_NOT_MET` naming what is missing, so US-030 holds on every path. Rework entered by editing a Verified shipment (`EDITED_AFTER_VERIFY`) needs no error or rework. |
+| 14.6 | Hold owning department is `hold_owner_dept` ∈ Shipping, Quality, Receiving, Production, Planning, Customer, required with `hold_reason_id` (E-13); stored on the shipment and in the history note (schema request 14.1 #2). |
+| 14.7 | Corrective action **owner and due date are required** (E-27); the owner must be an active user (`GET /lookups/users`). |
+| 14.8 | The server enforces only `^[A-Z0-9][A-Z0-9-]{2,29}$` for lot numbers (upper-cased on write) and `^[A-Za-z0-9-]{1,40}$` for tracking numbers (max 40). `L<yy><ww>-<nnn>` is a UI placeholder and seed convention, not a server rule. |
+| 14.9 | F8 for Quality: TRANSFER into or out of a Hold-type location and SCRAP at a Hold location only (matrix R-7). Receiving may transfer, scrap and record production complete for stock not in a Hold location; moving or scrapping **from** a Hold location is 403 `FORBIDDEN_HOLD_RELEASE`; transferring **into** Hold is allowed. PRODUCTION_COMPLETE is Receiving and Supervisor only. |
+| 14.10 | Not an API matter: per matrix §4 and security plan PD-2, the six non-Admin demo passwords are published; the deployed `demo.admin` password is not; Viewer is kept. |
+| 14.11 | Tile and chart shapes: E-48 and E-49 (§9): per KPI `value`, `value_1dp`, `previous_value`, `delta`, `trend` (Up/Down/Flat/null), `target`, `target_comparison`, `meets_target`, `numerator`, `denominator`, `extra`, plus a plain-text `definition` (docs/05 wording, rendered escaped, never as HTML). The UI never computes a KPI. Kenji confirms. |
+| 14.12, 14.13 | Presentation and copy decisions; no API impact. |
+| 14.14 | Each shipment line returns `part.packaging_instruction_ref` and `part.revision` (a part row has one revision; a different revision is a different part). |
+| 14.15 | Confirmed: the **current packer** is `shipment.packed_by`, the user of the most recent `start-packing` **or** `reopen`, for every role including Supervisor and Quality (T-4, T-5). The refusal is 403 `VERIFIER_SAME_AS_PACKER`; `packed_by` is in the payload and `allowed_actions` omits `verify` for that caller. |
+| 14.16 | Ship date defaults to `business_today`; a ship date **after `business_today` is rejected** (422 `fields.ship_date`) and one **before the order date is rejected** (422). A late reason is required when `ship_date > promise_date + on_time_tolerance_days`. |
+| 14.17 | Chart click-through uses ordinary list filters that exist: `GET /shipments?status=Shipped&date_field=ship_date&from=&to=` (C1 week, C2 day) and `GET /packaging-errors?category=&from=&to=` (C3). Links under each chart suffice on the API side. |
+| 14.18 | List parameters are exactly `page` (1-based), `page_size` (default 25, max 100), `sort` (field, `-` prefix for descending, allow-listed per endpoint) and the named filters of each endpoint (§1.5). Responses return `page`, `page_size`, `total`. Unknown parameters are 422, so the UI must not add extras. Filter state across redirects is a UI matter; the API is stateless. |
+
+### 14.4 Reserved: user management (P-23, v1.1; no endpoint in core)
+When built it follows Matrix R-11: one role per user; an Admin cannot change their own role or deactivate themselves; the last active Admin cannot be deactivated; a role change or deactivation deletes the user's sessions immediately; audit entries never contain passwords. All other roles get 403.
+
+### 14.5 Change control
+Change this file first, then the code, in the same PR (api-contract skill). Matrix renumbering touches only the P-nn and R-n references; §3 and §13 are regenerated from the matrix.
