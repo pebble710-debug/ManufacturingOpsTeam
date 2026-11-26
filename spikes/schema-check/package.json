@@ -1,0 +1,16 @@
+{
+  "name": "schema-check",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "Re-runnable verification harness: extracts the 0001 DDL from docs/data-model/migrations-plan.md, applies it to in-memory PGlite and asserts schema.md / seed-plan.md / permissions-matrix.md DB-level rules. Fictional data only. Not application code.",
+  "engines": { "node": ">=22.23.4" },
+  "scripts": {
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "0.3.16",
+    "vite": "8.3.8",
+    "vitest": "5.1.1"
+  }
+}
