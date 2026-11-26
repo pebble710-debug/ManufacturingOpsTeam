@@ -1,7 +1,7 @@
 # API Contract — Version 1 (V1-CORE)
 
-**Status:** DRAFT 1 for review (Marcus, Sasha, Dana, Kenji, Felix) · **Task:** T-014 · **Owner:** Diego (backend-developer) · **Date:** 2026-11-25
-**Inputs:** `docs/project-scope.md` · `docs/plan/backlog.md` §3.1 (V1-CORE only) · `docs/plan/permissions-matrix.md` (DRAFT, under review by Sasha) · `docs/ADR-001.md` §5, §8 · `docs/poc/poc-report.md` (finding R-1) · `docs/01` §1.5 · `docs/02` §2.4 · `docs/03` · `docs/05` + `kpi-definitions` · `docs/08` §8.2 (field names).
+**Status:** DRAFT 2 (reconciled with the REVIEWED permissions matrix and the security plan, 2026-11-26) for review by Marcus, Dana, Kenji, Felix, Maya · **Task:** T-014 · **Owner:** Diego (backend-developer) · **Date:** 2026-11-26
+**Inputs:** `docs/project-scope.md` · `docs/plan/backlog.md` §3.1 (V1-CORE only) · `docs/plan/permissions-matrix.md` (**REVIEWED**, incl. R-1 to R-13 and T-1 to T-22) · `docs/security/security-plan.md` · `docs/design/ui-spec.md` §14 · `docs/ADR-001.md` §5, §8 · `docs/poc/poc-report.md` (finding R-1) · `docs/01` §1.5 · `docs/02` §2.4 · `docs/03` · `docs/05` + `kpi-definitions` · `docs/08` §8.2 (field names).
 All companies, people, parts and records are **fictional** (Cobalt Ridge Components, Inc.). This contract is design only; no application code exists yet.
 
 Tags: **[R]** researched in the cited doc · **[A]** assumption · **[P]** proposed convention. Anything tagged [P] or [A] and listed in §9 needs a decision from the named owner.
@@ -9,7 +9,7 @@ Tags: **[R]** researched in the cited doc · **[A]** assumption · **[P]** propo
 Reference notation used throughout:
 - **P-nn** = action ID in the permissions matrix; **Matrix R-n** = special rule in the matrix §3. (Not to be confused with *PoC R-1*, the CSRF finding.) If Sasha renumbers the matrix, only these references change.
 - **US-nnn** = backlog story; **AC-n** = scope §5 acceptance criterion; **E-nn** = endpoint ID in this file.
-- Roles: **ADM** Admin, **SUP** Supervisor, **SHP** Shipping, **RCV** Receiving, **QUA** Quality, **VWR** Viewer (optional; if dropped, delete it from the role enum and nothing else changes).
+- Roles: **ADM** Admin, **SUP** Supervisor, **SHP** Shipping, **RCV** Receiving, **QUA** Quality, **VWR** Viewer (read-only guest, kept and seeded). **One role per user** (Matrix R-11).
 
 ---
 
@@ -20,36 +20,39 @@ Reference notation used throughout:
 - Resources are plural nouns. **Status changes are actions** (`POST /shipments/{id}/actions/{name}`), never field edits. **Ledger, status history and audit are append-only**: no PUT/PATCH/DELETE exists for them; corrections are new ADJUST rows. **No DELETE exists anywhere in v1 core** (deactivate or cancel instead). Unsupported methods return 405 `METHOD_NOT_ALLOWED`; unknown paths return 404 `NOT_FOUND`; deny by default.
 - IDs are integers. Business keys (`shipment_no` `SH-####`, `error_no` `PE-####`, `receipt_no` `RC-####`, `count_no` `CC-####`) are returned next to `id`. For shipments, packaging errors, receipts and cycle counts, the `{id}` path segment accepts **either** the integer id or the business key (formats cannot collide). Numbers, never strings, for quantities (integers), weights (≤ 2 decimals) and ids.
 - **Timestamps** are ISO 8601 UTC with `Z` (`2026-11-25T14:03:22.123Z`); timestamp inputs may carry an offset and are normalised to UTC. **Dates** are `YYYY-MM-DD` (ship date, promise date, etc. are calendar dates, not timestamps). Display time zone is a UI concern (Q-20: default UTC).
-- Unknown JSON fields and unknown query parameters are **rejected with 422** (mass-assignment guard, catches typos). Strings are trimmed; empty string = missing for required fields. Lot numbers are trimmed and **upper-cased** on write [P].
-- Body limit 256 KB (else 413 `PAYLOAD_TOO_LARGE`). No CORS headers are ever sent (same-origin only). No `Idempotency-Key` in v1: actions are state-guarded (repeating one returns 409), create endpoints are not idempotent and the UI must disable the submit button after the first click.
+- Unknown JSON body fields are **rejected with 400 `UNKNOWN_FIELD`** (Zod `.strict()`; this is also the Matrix R-12 guard: a body containing `packed_by`, `verified_by`, `counted_by`, `approved_by`, `created_by`, `user_id`, `verifierId` etc. is refused and nothing changes). Unknown query parameters are rejected with 422. Strings are trimmed; empty string = missing for required fields. Lot numbers are trimmed and **upper-cased** on write [P].
+- Body limit **64 KB** (security plan §6; else 413 `PAYLOAD_TOO_LARGE`). No CORS headers are ever sent (same-origin only). No `Idempotency-Key` in v1: actions are state-guarded (repeating one returns 409), create endpoints are not idempotent and the UI must disable the submit button after the first click.
 
 ### 1.2 Authentication and sessions (ADR-001 §8, ADR-003 will finalise) [P]
-- Cookie `__Host-sid`: random 32-byte token, `HttpOnly; Secure; SameSite=Lax; Path=/`, no `Domain`. Server stores only its SHA-256. Idle timeout 30 min (sliding; `last_seen` is written at most once per minute), absolute 8 h, rotated on login, deleted on logout.
-- **Every endpoint except E-01 and E-02 requires a valid session.** No session, expired session, or deactivated user (checked on every request) → **401 `UNAUTHENTICATED`** (API) or redirect to `/login` (pages; outside this contract). 401 is never audited (no identity); failed logins are (§1.8).
+- Cookie `__Host-sid`: random 32-byte token, `HttpOnly; Secure; SameSite=Lax; Path=/`, no `Domain`. Server stores only its SHA-256. Idle timeout 30 min (sliding; `last_seen_at` is written at most once every 5 minutes), absolute 8 h, rotated on login, deleted on logout.
+- **Every endpoint except E-02 requires a valid session** (E-01 is withdrawn, §4). A request with no cookie is refused with 401 **without a DB query**. No session, expired session, or deactivated user (checked on every request) → **401 `UNAUTHENTICATED`** (API) or redirect to `/login` (pages; outside this contract). 401 is never audited (no identity); failed logins are (§1.8).
 - The role is read from the user row on every request (never from the cookie or the client). A role change or deactivation takes effect on the next request.
-- Login rate limit: DB-backed counter per (username, IP): 5 failures per 15 min → 429 `TOO_MANY_ATTEMPTS` with `Retry-After` (ADR-001 §8 #5; lockout policy details are ADR-003).
+- **Login rate limit** (security plan §3.3): DB-backed, **5 failures per (username, client key) and 30 per client key per 15 min**; over the limit → 429 `TOO_MANY_ATTEMPTS` with `Retry-After`, the generic message, and **no scrypt work** (cheap rejection, so this check runs before password verification). No account lockout. The client key is a salted SHA-256 of the client IP; raw IPs are never stored or audited. A successful login clears the (username, client) counter.
+- **Roles and accounts (Matrix R-11):** a user has exactly one role; role and `active` are read from the `users` row on every request; a role change or deactivation deletes that user's sessions at once. User-management endpoints are not built in v1 core (P-23, §11.1 records the rules for v1.1).
 
-### 1.3 CSRF and content-type enforcement (PoC finding R-1: `checkOrigin` does not stop cross-origin JSON POSTs)
-Every state-changing request (**POST, PATCH, PUT, DELETE**, all of E-02, E-03 and every write below) must pass **all** of these, in this order, in middleware **before the handler, any body parsing or any DB write**:
+### 1.3 Request pipeline, check order, CSRF and content-type enforcement
+PoC finding R-1: Astro `checkOrigin` does not stop cross-origin JSON POSTs, so every state-changing request (**POST, PATCH, PUT, DELETE**, including E-02, E-03 and E-52) must pass **all** of the checks below, **in this fixed order** (permissions matrix §1, security plan §4/§5). Steps 1 to 4 run in middleware before the handler, before body parsing and before any DB write.
 
 | # | Check | Failure |
 |---|-------|---------|
-| 1 | Method allowed for the path | 405 `METHOD_NOT_ALLOWED` |
-| 2 | Valid session (except E-02) | 401 `UNAUTHENTICATED` |
-| 3 | If an `Origin` header is present it must equal the site origin (a missing `Origin` is allowed for non-browser clients, but then step 5 still applies) | 403 `CSRF_INVALID` |
-| 4 | `Content-Type` is exactly `application/json` (an optional `; charset=utf-8` is allowed). Missing, `text/plain`, form types, multipart, anything else is refused. | **415 `UNSUPPORTED_MEDIA_TYPE`** |
-| 5 | Header `X-CSRF-Token` equals the session's synchronizer token (constant-time compare). Missing or wrong, or a token from another session. | **403 `CSRF_INVALID`** + audit `ACCESS_DENIED` |
-| 6 | Role allowed for the action (P-nn) | 403 `FORBIDDEN` + audit |
-| 7 | Body parse | 400 `BAD_REQUEST` |
-| 8 | Schema validation (Zod, state-independent) | 422 `VALIDATION_ERROR` |
-| 9 | Load resource | 404 `NOT_FOUND` |
-| 10 | Generic state rule (e.g., invalid transition, locked record) | 409 |
-| 11 | Conditional role/identity rules (Matrix R-1, R-4, R-5, R-7, R-8) | 403 with a distinct code + audit |
-| 12 | Data-dependent business rules (checklist, late reason, stock) | 422 or 409 as listed per endpoint |
+| 0 | Method allowed for the path (GET never reaches a write handler; Matrix R-13) | 405 `METHOD_NOT_ALLOWED` |
+| 1 | Valid session (not for E-02). No cookie is refused without a DB query. | **401** `UNAUTHENTICATED` |
+| 2a | If an `Origin` header is present it must equal the site origin. | **403** `CSRF_INVALID` + audit |
+| 2b | `Content-Type` is exactly `application/json` (optional `; charset=utf-8`). Missing, `text/plain`, form types, multipart, anything else. | **415** `UNSUPPORTED_MEDIA_TYPE` |
+| 2c | `X-CSRF-Token` equals the session's synchronizer token (constant-time compare; a token from another session fails). Absent `Origin` (non-browser client) does not skip this. | **403** `CSRF_INVALID` + audit |
+| 3 | Role allowed for the action (P-nn). | **403** `FORBIDDEN_ROLE` + audit |
+| 4 | Body size ≤ 64 KB (413); JSON parse and object (400 `BAD_REQUEST`); **unknown or actor fields** (R-12) → 400 `UNKNOWN_FIELD`; Zod type/range/required/enum/cross-field validation (state-independent) → **422** `VALIDATION_ERROR`. Query-parameter validation is 422. | 400 / 413 / 422 |
+| 5 | Load the resource (404 `NOT_FOUND`, same body for any missing or malformed id), then **identity and role-by-state rules read from the locked DB row**: R-1 verifier ≠ packer, R-4 approver ≠ counter, R-5 Shipping cancel only early, R-7 moves out of Hold, R-8 after-ship errors. | **403** with a distinct code + audit |
+| 6 | State/conflict: invalid transition, locked record, rework gate, insufficient stock, duplicate key. Data-dependent rules that are not state conflicts (checklist, late reason, tracking number) stay **422**. | **409** (or 422 as listed) |
+| 7 | Rate or cooldown limits (login attempts, demo-reset cooldown, optional write cap). **Login is the exception:** its limit is checked **first**, before any password work, so a throttled client costs almost nothing. | **429** |
 
-Notes: (a) Step 10 runs before 11: a request that **no** role could perform in the current state returns 409, never 403 (e.g., a Shipping user cancelling a Shipped shipment → 409; cancelling a Packing one → 403 `FORBIDDEN_CANCEL_AT_STATUS`). (b) Every POST sends a JSON object body; a zero-length body with the correct content type is read as `{}`. (c) GET/HEAD never change state and need no token. (d) Where this file says "the service returns X", the same service function is shared by any HTML form handler; form posts (`application/x-www-form-urlencoded` + hidden field `_csrf`, ADR-001 §8 #4) are out of this contract but must call the same functions and obey the same codes. Every write in this file is reachable through JSON, so the UI may submit all forms with `fetch` and the header. (e) Required test per write route (ADR-001 §8 #4): forged `Origin` + JSON without token → 403; wrong content type → 415; valid token + correct type → success.
+Consequences (matrix §1, decided here): (a) the identity and role-by-state rules are **403 and are evaluated before the 409** checks, so a Shipping user cancelling any shipment that is not Planned or Ready to Pack (even a Shipped one) gets 403 `FORBIDDEN_CANCEL_AT_STATUS`, and a packer verifying gets 403 `VERIFIER_SAME_AS_PACKER` whatever the status (a shipment with no packer cannot trigger R-1); (b) a signed-in caller who is **not** allowed by role learns nothing about the resource (403 precedes 404 and validation); (c) a 422 never reveals state.
+Every POST sends a JSON object body (a zero-length body with the right content type is read as `{}`). **GET and HEAD never change state**, with one exception: the throttled `last_seen_at` update of the session. Sign-out and demo reset are POST; a GET to any write URL is 405 (T-21). Where this file says "the service returns X", any HTML form handler calls the same service function and obeys the same codes; every write is reachable through JSON, so the UI may submit all forms with `fetch` plus the header (Q-O, answered in §14.3).
+Required test per write route (S-07, S-08): forged `Origin` + JSON without token → 403; wrong or missing content type → 415; valid token + correct type → success; and the Viewer, as the least privileged signed-in role, gets 403 on every write (T-10).
 
-**Token delivery:** the token is returned by E-02 (login response) and E-04 (`GET /me`); pages receive it from `Astro.locals`. **Pre-login token** [P, needs Sasha/ADR-003]: E-01 creates an *anonymous session row* (no user) with its own token; E-02 requires that cookie + token, then rotates to an authenticated session and deletes the anonymous row. Anonymous rows expire after 15 min and are purged opportunistically; creation is rate-limited per IP.
+**Token delivery:** the per-session token is returned by E-02 (login response) and E-04 (`GET /me`); pages receive it from `Astro.locals`. **Login form (pre-session):** protected by the Origin check (2a) and the content-type allow-list (2b) only; no pre-login token is built (security plan §5: login CSRF has little impact here; ADR-003 may add one, which would add a POST, never a state-changing GET, to respect R-13). The CSRF token rotates with the session at login.
+
+**Optional abuse controls [P, "Should" in security plan PD-5/PD-7; not in V1-CORE unless Olivia adds them]:** per-session write cap of 60 writes/minute → 429 `WRITE_RATE_LIMITED`; Admin-toggled "demo read-only mode" → all writes 503 `DEMO_READ_ONLY` (reads unaffected).
 
 ### 1.4 Error envelope
 ```json
@@ -62,14 +65,14 @@ Notes: (a) Step 10 runs before 11: a request that **no** role could perform in t
 | HTTP | When |
 |------|------|
 | 200 / 201 / 204 | OK / created (`Location` header) / no body (logout) |
-| 400 | malformed JSON (`BAD_REQUEST`) |
+| 400 | malformed JSON (`BAD_REQUEST`) or unknown/actor body field (`UNKNOWN_FIELD`, Matrix R-12) |
 | 401 | no/expired session; wrong credentials (`INVALID_CREDENTIALS`) |
-| 403 | role/identity refusal and CSRF failure (never for a pure state conflict) |
+| 403 | CSRF failure, role refusal, identity and role-by-state rules (R-1, R-4, R-5, R-7, R-8); never for a pure state conflict |
 | 404 | unknown path/resource, disabled feature (`FEATURE_DISABLED`) |
 | 405 / 413 / 415 | method / size / content type |
 | 409 | state conflict: invalid transition, locked record, insufficient stock, duplicate key |
 | 422 | validation: type, range, required, cross-field and data-dependent rules |
-| 429 | login rate limit |
+| 429 | login rate limit, demo-reset cooldown (10 min) |
 | 500 / 503 | unexpected / database unavailable or waking (`SERVICE_UNAVAILABLE`, `Retry-After`) |
 
 **Error code registry** (all codes used in this file):
@@ -77,17 +80,18 @@ Notes: (a) Step 10 runs before 11: a request that **no** role could perform in t
 | Code | HTTP | Meaning |
 |------|------|---------|
 | `BAD_REQUEST` | 400 | body is not valid JSON / not an object |
+| `UNKNOWN_FIELD` | 400 | body has a field the schema does not define, including actor fields (`packed_by`, `verified_by`, `counted_by`, `approved_by`, `created_by`, `user_id`, `verifierId`, `packerId`); `fields` lists the names; nothing changes (R-12, T-16) |
 | `UNAUTHENTICATED` | 401 | no valid session (`details.reason` = `missing`, `expired`, `inactive`) |
 | `INVALID_CREDENTIALS` | 401 | wrong password, unknown user and deactivated user all return this one generic message |
-| `FORBIDDEN` | 403 | role not allowed for the action (P-nn in `details.required`) |
+| `FORBIDDEN_ROLE` | 403 | role not allowed for the action (matrix P-nn in `details.required`) |
 | `CSRF_INVALID` | 403 | missing/wrong token or foreign `Origin` |
 | `VERIFIER_SAME_AS_PACKER` | 403 | Matrix R-1: caller is the recorded current packer |
 | `FORBIDDEN_CANCEL_AT_STATUS` | 403 | Matrix R-5: Shipping cancelling outside Planned / Ready to Pack |
-| `FORBIDDEN_HOLD_RELEASE` | 403 | Matrix R-7: Receiving moving or scrapping stock out of a Hold location |
-| `FORBIDDEN_NON_HOLD_TXN` | 403 | Quality posting a stock transaction that is not from a Hold location [A] |
-| `FORBIDDEN_AFTER_SHIP_ERROR` | 403 | Matrix R-8: Shipping logging an After-ship error |
-| `APPROVER_ENTERED_COUNT` | 403 | Matrix R-4 (proposed): Supervisor approving a count they entered |
-| `NOT_FOUND` / `FEATURE_DISABLED` | 404 | unknown resource / `DEMO_RESET_ENABLED` is not `true` |
+| `FORBIDDEN_HOLD_RELEASE` | 403 | Matrix R-7: Receiving transferring or scrapping stock whose source is a Hold location (decided by the DB type of the source location) |
+| `FORBIDDEN_NON_HOLD_TXN` | 403 | Matrix R-7: Quality (P-16 Y\*) posting anything other than a transfer or scrap into/out of a Hold location (e.g., PRODUCTION_COMPLETE) |
+| `FORBIDDEN_AFTER_SHIP_ERROR` | 403 | Matrix R-8: Shipping logging an error with stage After ship or against a Shipped shipment |
+| `APPROVER_SAME_AS_COUNTER` | 403 | Matrix R-4: Supervisor approving a count in which they entered or recounted any line |
+| `NOT_FOUND` / `FEATURE_DISABLED` | 404 | unknown resource / `DEMO_RESET_ENABLED` is not `true` (Matrix R-9; same for every signed-in role) |
 | `METHOD_NOT_ALLOWED`, `PAYLOAD_TOO_LARGE`, `UNSUPPORTED_MEDIA_TYPE` | 405, 413, 415 | |
 | `INVALID_TRANSITION` | 409 | status does not allow the action; `details.status`, `details.allowed_from` |
 | `REWORK_GATE_NOT_MET` | 409 | failed verification / error logged, but error, completed rework or reopen missing; `details.missing` ⊂ [`packaging_error`, `completed_rework`, `reopen`] |
@@ -111,6 +115,8 @@ Notes: (a) Step 10 runs before 11: a request that **no** role could perform in t
 | `NO_COUNT_LINES` / `COUNT_TOO_LARGE` | 422 | scope matches zero / more than 500 stock rows |
 | `EXPORT_TOO_LARGE` | 422 | CSV export above 20,000 rows |
 | `TOO_MANY_ATTEMPTS` | 429 | login rate limit |
+| `RESET_COOLDOWN` | 429 | demo reset within 10 minutes of the last accepted reset (`Retry-After`) |
+| `WRITE_RATE_LIMITED`, `DEMO_READ_ONLY` | 429, 503 | optional abuse controls (§1.3) |
 | `INTERNAL_ERROR`, `SERVICE_UNAVAILABLE` | 500, 503 | generic |
 
 ### 1.5 Lists, pagination, sorting, filters
@@ -141,12 +147,12 @@ Any status before Shipped (including On Hold, Rework) --cancel--> Cancelled
 |--------|------|----|----------------|
 | `mark-ready` | Planned | Ready to Pack | SHP, SUP (P-05) |
 | `start-packing` | Ready to Pack | Packing (caller becomes **packer**) | SHP, SUP (P-06) |
-| `verify` | Packing | Verified, or Rework on any failed item | SHP, QUA, SUP (P-07) + Matrix R-1 |
+| `verify` | Packing | Verified, or Rework on any failed item | SHP, QUA, SUP (P-07\*) + Matrix R-1 |
 | `ship` | Verified | Shipped (+ SHIP ledger rows) | SHP, SUP (P-08) |
 | `hold` | Planned, Ready to Pack, Packing, Verified, Rework | On Hold | SHP, QUA, SUP (P-09) |
 | `release` | On Hold | status before hold | QUA, SUP (P-10, Matrix R-6) |
-| `cancel` | Planned, Ready to Pack, Packing, Verified, Rework, On Hold | Cancelled | SUP any of those; SHP only from Planned / Ready to Pack (P-11, Matrix R-5) |
-| `reopen` | Rework | Packing (caller becomes the **new packer**) | SHP, SUP (P-06) [P: matrix has no row for re-packing; treated as P-06, Sasha/Priya to confirm] |
+| `cancel` | Planned, Ready to Pack, Packing, Verified, Rework, On Hold | Cancelled | SUP any of those; SHP only from Planned / Ready to Pack, otherwise **403** (P-11, Matrix R-5) |
+| `reopen` | Rework | Packing (caller becomes the **new packer**) | SHP, SUP (P-06) [P: the reviewed matrix has no separate row for re-packing after rework; treated as P-06 (Priya to confirm)] |
 | (edit) | Verified | Rework, when `customer_id`, `customer_po` or a line's part/qty/lot/location changes (US-015) | SHP, SUP (P-04) |
 | (error) | Packing, Verified | Rework, when a Before-ship packaging error is logged (US-027) | P-12 |
 
@@ -161,7 +167,7 @@ Failing → 409 `REWORK_GATE_NOT_MET`, `details.missing` = [`packaging_error`] a
 ### 1.8 Audit log (US-005; ADR-001 §8 #9)
 - Every successful write inserts its `audit_log` rows **in the same transaction** as the change: `{ user_id, action, table_name, record_id, changes: { field: [old, new] }, at (real UTC) }`. One shipment action = one audit row for the shipment (+ one per other record created, e.g. the error, the receipt). Ledger rows are not duplicated into audit; the audit row carries `changes.ledger_txn_ids`.
 - **No audit row** for a request rejected by validation (422) or state (409) (US-005 AC-4). Passwords, tokens and CSRF values never appear in `changes`.
-- **Access denials** (every 403, including `CSRF_INVALID`, `VERIFIER_SAME_AS_PACKER`) write `ACCESS_DENIED` with `changes = { method, path, code, required, role }`, in a separate short transaction so it survives the aborted request. Failed login: `LOGIN_FAILED` with the attempted username (truncated to 64 chars), never the password. Successful login `LOGIN_SUCCESS`, `LOGOUT`.
+- **Access denials** (every 403, including `CSRF_INVALID`, `VERIFIER_SAME_AS_PACKER`) write `ACCESS_DENIED` with `changes = { method, path, code, required, role }`, in a separate short transaction so it survives the aborted request. Anonymous 401s are not audited. Failed login: `LOGIN_FAILED` with the attempted username **only if it matches an existing user, otherwise the literal `unknown`** (people type passwords into the username box), never the password. Successful login `LOGIN_SUCCESS`, `LOGOUT`. **Never logged or stored in audit:** passwords (even wrong ones), session tokens or hashes, CSRF tokens, `NETLIFY_DB_URL`, env values, full request bodies, **IP addresses** (security plan §9).
 - Audit action names are given per endpoint below. Enumeration: `LOGIN_SUCCESS LOGIN_FAILED LOGOUT ACCESS_DENIED SHIPMENT_CREATE SHIPMENT_UPDATE SHIPMENT_MARK_READY SHIPMENT_START_PACKING SHIPMENT_VERIFY SHIPMENT_SHIP SHIPMENT_HOLD SHIPMENT_RELEASE SHIPMENT_CANCEL SHIPMENT_REOPEN PACKAGING_ERROR_CREATE PACKAGING_ERROR_UPDATE PACKAGING_ERROR_CONTAIN PACKAGING_ERROR_CLOSE REWORK_CREATE REWORK_COMPLETE CORRECTIVE_ACTION_CREATE CORRECTIVE_ACTION_UPDATE RECEIPT_CREATE INVENTORY_TXN_CREATE CYCLE_COUNT_CREATE CYCLE_COUNT_ENTRY CYCLE_COUNT_SUBMIT CYCLE_COUNT_APPROVE LOOKUP_CREATE LOOKUP_UPDATE SETTINGS_TARGETS_UPDATE SETTINGS_REPORTING_UPDATE DEMO_RESET`.
 
 ### 1.9 Concurrency and atomicity [P]
@@ -210,9 +216,9 @@ Zod on every body and query; allow-listed sort columns; `sql.unsafe` and `set:ht
 
 | ID | Method and path | Roles | Matrix | Stories |
 |----|-----------------|-------|--------|---------|
-| E-01 | GET `/auth/csrf` | anonymous | P-01 | US-001, US-074 |
+| E-01 | (withdrawn, see §4) | | | |
 | E-02 | POST `/auth/login` | anonymous | P-01 | US-001 |
-| E-03 | POST `/auth/logout` | any signed-in | P-01 | US-001 |
+| E-03 | POST `/auth/logout` (POST only; GET is 405, R-13) | any signed-in | P-01 | US-001 |
 | E-04 | GET `/me` | any signed-in | P-01 | US-001, US-003 |
 | E-05 | GET `/shipments` | all | P-03 | US-024 |
 | E-06 | POST `/shipments` | SHP, SUP | P-04 | US-014 |
@@ -220,14 +226,14 @@ Zod on every body and query; allow-listed sort columns; `sql.unsafe` and `set:ht
 | E-08 | PATCH `/shipments/{id}` | SHP, SUP | P-04 | US-014 (absorbs US-015, US-023) |
 | E-09 | POST `/shipments/{id}/actions/mark-ready` | SHP, SUP | P-05 | US-016 |
 | E-10 | POST `/shipments/{id}/actions/start-packing` | SHP, SUP | P-06 | US-019 |
-| E-11 | POST `/shipments/{id}/actions/verify` | SHP, QUA, SUP (+R-1) | P-07 | US-019, US-020, US-030 |
+| E-11 | POST `/shipments/{id}/actions/verify` | SHP\*, QUA\*, SUP\* (not the packer, R-1) | P-07 | US-019, US-020, US-030 |
 | E-12 | POST `/shipments/{id}/actions/ship` | SHP, SUP | P-08 | US-021 (absorbs US-022), US-041, US-030 |
 | E-13 | POST `/shipments/{id}/actions/hold` | SHP, QUA, SUP | P-09 | US-016 (absorbs US-017) |
 | E-14 | POST `/shipments/{id}/actions/release` | QUA, SUP | P-10 | US-016 |
-| E-15 | POST `/shipments/{id}/actions/cancel` | SUP; SHP early only | P-11 | US-016 |
+| E-15 | POST `/shipments/{id}/actions/cancel` | SUP; SHP\* early only (R-5) | P-11 | US-016 |
 | E-16 | POST `/shipments/{id}/actions/reopen` | SHP, SUP | P-06 | US-019, US-020, US-030 |
 | E-17 | GET `/packaging-errors` | all | P-03 | US-032 (absorbs US-034) |
-| E-18 | POST `/packaging-errors` | SHP (Before ship), QUA, SUP | P-12 | US-027 (absorbs US-033) |
+| E-18 | POST `/packaging-errors` | SHP\* (Before ship only, R-8), QUA, SUP | P-12 | US-027 (absorbs US-033) |
 | E-19 | GET `/packaging-errors/{id}` | all | P-03 | US-032 |
 | E-20 | PATCH `/packaging-errors/{id}` | QUA, SUP | P-14 | US-032 (absorbs US-031) |
 | E-21 | POST `/packaging-errors/{id}/actions/contain` | QUA, SUP | P-14 | US-032 |
@@ -243,13 +249,13 @@ Zod on every body and query; allow-listed sort columns; `sql.unsafe` and `set:ht
 | E-31 | GET `/receipts/{id}` | all | P-03 | US-035 |
 | E-32 | GET `/inventory/on-hand` | all | P-03 | US-037 (absorbs US-038) |
 | E-33 | GET `/inventory-transactions` | all | P-03 | US-037 |
-| E-34 | POST `/inventory-transactions` (TRANSFER, SCRAP, PRODUCTION_COMPLETE) | RCV*, QUA*, SUP | P-16 | US-035 (absorbs US-039), US-037 |
+| E-34 | POST `/inventory-transactions` (TRANSFER, SCRAP, PRODUCTION_COMPLETE) | RCV\* (R-7), QUA\* (Hold moves only), SUP | P-16 | US-035 (absorbs US-039), US-037 |
 | E-35 | GET `/cycle-counts` | all | P-03 | US-043 |
 | E-36 | POST `/cycle-counts` | SUP | P-17 | US-043 (absorbs US-042) |
 | E-37 | GET `/cycle-counts/{id}` | all (fields restricted, §5.4) | P-03 | US-043, US-044 |
 | E-38 | POST `/cycle-counts/{id}/entries` | RCV, SUP | P-18 | US-043 |
 | E-39 | POST `/cycle-counts/{id}/actions/submit` | RCV, SUP | P-18 | US-043 |
-| E-40 | POST `/cycle-counts/{id}/actions/approve` | SUP (+R-3, R-4) | P-19 | US-044 |
+| E-40 | POST `/cycle-counts/{id}/actions/approve` | SUP\* (R-3; not the counter, R-4) | P-19 | US-044 |
 | E-41 | GET `/lot-trace/{lot_number}` | all | P-03 | US-045 |
 | E-42 | GET `/lookups/{type}` | all | P-03 | US-007 |
 | E-43 | POST `/lookups/{type}` | ADM, SUP | P-20 | US-007 |
@@ -261,7 +267,9 @@ Zod on every body and query; allow-listed sort columns; `sql.unsafe` and `set:ht
 | E-49 | GET `/kpis/charts/{C1|C2|C3}` | all | P-02 | US-056, US-057, US-058 |
 | E-50 | GET `/reports/{R1|R3|R4|R7}` (+ `?format=csv`) | all | P-03 | US-065 (absorbs US-066, US-068, US-069), US-045 |
 | E-51 | GET `/admin/audit-log` | ADM | P-24 | US-005 (absorbs US-006) |
-| E-52 | POST `/admin/demo-reset` | ADM | P-25 | US-011, US-081 |
+| E-52 | POST `/admin/demo-reset` | ADM\* (flag, cooldown, R-9) | P-25 | US-011, US-081 |
+
+Roles in this table were regenerated on 2026-11-26 from the REVIEWED matrix §2 (`*` = special rule, §1.3 step 5). "all" = every signed-in role including Viewer (P-02/P-03 read). Admin holds **no** operational action (Matrix R-2, T-6).
 
 Not built in v1 core (404/405; deferred): user management P-23 (US-004), archive (US-010), delivered date (US-026), prefilled error form (US-028), release/reject screen (US-036), manual adjustment (US-040), R2/R5/R6/R8, C4–C6, KPI-8, dashboard customer/carrier filters (US-084) at dashboard level (R1 keeps its own customer/carrier filters).
 
@@ -269,16 +277,15 @@ Not built in v1 core (404/405; deferred): user management P-23 (US-004), archive
 
 ## 4. Auth and session
 
-### E-01 GET /api/v1/auth/csrf
-Roles: anonymous. Creates the anonymous pre-login session and returns its token (§1.3). Sets `__Host-sid`.
-Response 200: `{ "data": { "csrf_token": "..." } }`. 429 when the per-IP creation limit is hit.
+### E-01 (not built)
+The draft's pre-login token endpoint is withdrawn: security plan §5 protects the login form with the Origin check and the content-type allow-list only, and a state-creating GET would break Matrix R-13. ID kept so numbering stays stable; ADR-003 may reintroduce a pre-session token as a POST.
 
 ### E-02 POST /api/v1/auth/login
-Roles: anonymous (needs the E-01 cookie and `X-CSRF-Token`). Matrix P-01.
+Roles: anonymous (checks 2a and 2b of §1.3 apply; no CSRF token exists yet). Matrix P-01. **The rate-limit check (429) runs first**, before any scrypt work.
 Request: `{ "username": string 1..64, "password": string 1..200 }`
-Rules: look up the user; if unknown, still run one scrypt verification against a dummy hash (constant-ish time); `INVALID_CREDENTIALS` is returned identically for wrong password, unknown username and deactivated user; the failed-attempt counter is DB-backed (§1.2).
-Effects: on success delete the anonymous row, create the authenticated session (rotated id and new CSRF token), `LOGIN_SUCCESS` audit. On failure `LOGIN_FAILED` audit (attempted username only).
-Responses: 200 `{ "data": { "user": { "id", "username", "display_name", "role" }, "csrf_token", "session": { "expires_at", "idle_expires_at" } } }` | 401 `INVALID_CREDENTIALS` ("Invalid username or password.") | 403 `CSRF_INVALID` | 415 | 422 (missing field) | 429 `TOO_MANY_ATTEMPTS`.
+Rules: look up the user; if unknown, still run one scrypt verification against a dummy hash; `INVALID_CREDENTIALS` is returned identically (same status, same message) for wrong password, unknown username and deactivated user; the failed-attempt counters are DB-backed (§1.2: 5 per username+client and 30 per client per 15 min, no lockout). scrypt parameters per security plan §3.1 (ADR-003 confirms).
+Effects: on success create the authenticated session (new random token; any pre-login cookie is ignored and replaced; new CSRF token), clear the (username, client) counter, `LOGIN_SUCCESS` audit. On failure increment the counters and write `LOGIN_FAILED` audit (§1.8).
+Responses: 200 `{ "data": { "user": { "id", "username", "display_name", "role" }, "csrf_token", "session": { "expires_at", "idle_expires_at" } } }` | 401 `INVALID_CREDENTIALS` ("Username or password is incorrect.") | 403 `CSRF_INVALID` | 415 | 422 (missing field) | 429 `TOO_MANY_ATTEMPTS`.
 
 ### E-03 POST /api/v1/auth/logout
 Roles: any signed-in. Effects: delete the session row, clear cookie, audit `LOGOUT`. Responses: 204 | 401 | 403 `CSRF_INVALID`. Back-navigation to a protected page then requires login (US-001).
@@ -345,7 +352,7 @@ Roles: SHP, SUP (P-05). Request `{ note? }`. Rules: status Planned. Effects: →
 Roles: SHP, SUP (P-06). Request `{ note? }`. Rules: status Ready to Pack. Effects: → Packing; `packed_by` = caller (the recorded **packer**); audit `SHIPMENT_START_PACKING`. The response lets the UI show each part's `packaging_instruction_ref`. Responses: 200 | 403 | 409.
 
 ### E-11 POST /api/v1/shipments/{id}/actions/verify
-Roles: SHP, QUA, SUP (P-07); ADM, RCV, VWR 403. **Subject to Matrix R-1 for every role.**
+Roles: SHP, QUA, SUP (P-07\*); ADM, RCV, VWR 403 `FORBIDDEN_ROLE`. **Subject to Matrix R-1 for every role.**
 Request:
 ```json
 { "checklist": { "part_number": "pass", "revision": "pass", "quantity": "pass", "lot": "pass",
@@ -353,15 +360,15 @@ Request:
   "note": "Label shows CRC-2041-A, parts are rev B" }
 ```
 Rules, in order:
-1. Status must be Packing. Rework → see the rework-gate text in §1.7 (409 `REWORK_GATE_NOT_MET` or `INVALID_TRANSITION`). Any other status → 409 `INVALID_TRANSITION` (a Packing shipment with no recorded packer is a data fault: 409 `INVALID_TRANSITION`, `details.reason = "no_packer"`).
-2. **Matrix R-1:** `caller.id == shipment.packed_by` → **403 `VERIFIER_SAME_AS_PACKER`** ("The person who packed this shipment cannot verify it."), audit `ACCESS_DENIED`, **no verification row is written**, status unchanged. Applies to Supervisor and Quality too. The comparison is against the *current* packer (after reopen, the new packer).
+1. **Matrix R-1 (checked inside the verify transaction, after the body validates and before the 409 checks, §1.3 step 5):** the shipment row is locked with `SELECT … FOR UPDATE` (or the status change is one conditional `UPDATE … WHERE status = 'Packing' AND packed_by <> $caller`), and the caller id **from the session** is compared with `shipment.packed_by`, the **current packer** (the user of the latest `start-packing` or `reopen`). Equal → **403 `VERIFIER_SAME_AS_PACKER`** ("The person who packed this shipment cannot verify it."), audit `ACCESS_DENIED`, **no verification row (passed or failed) is written**, status unchanged. Applies to Shipping, Quality and Supervisor alike; after a reopen the new packer is refused and the earlier packer is accepted (T-5). Two concurrent requests cannot bypass it because the comparison and the status change happen under the same row lock. The packer id is never read from the request (R-12; a body containing `verifierId`/`packerId` is 400 `UNKNOWN_FIELD`, T-16).
+2. Status must be Packing, else 409. Rework → see the rework-gate text in §1.7 (409 `REWORK_GATE_NOT_MET` or `INVALID_TRANSITION`). A Packing shipment with no recorded packer is a data fault: 409 `INVALID_TRANSITION`, `details.reason = "no_packer"`.
 3. Checklist: every applicable key present with `pass` or `fail`; `coc` is required iff any line's part has `requires_coc` and **rejected as unknown if not applicable**; a missing key → 422 `CHECKLIST_INCOMPLETE` (`fields.checklist.<key>`). No "unanswered" can pass.
 4. Record consistency (poka-yoke, US-023): `lot = pass` requires every line to have a `lot_number` and `coc = pass` requires `doc_coc = true`, else 422 `CHECKLIST_CONTRADICTS_RECORD` (the verifier must mark `fail`, or the packer fix the record via E-08). `labels`, `packing_slip`, `packaging_method`, `part_number`, `revision`, `quantity` are human judgements.
 Effects (one transaction): insert `shipment_verification` row (`attempt_no` = previous + 1, `result`, `verified_by`, `packer_id` snapshot, checklist, failed items, `business_date`).
 - All applicable items `pass` → status **Verified**, `verified_by`, `verified_at`; completed rework events of the episode get `reverified_ok = true` (server-managed) [P]; `rework_origin` cleared.
 - Any item `fail` → status **Rework**, `rework_origin = VERIFICATION_FAILED`, history note lists the failed items, `verified_by` cleared. HTTP is still 200; `data.verification.result = "Fail"`. A packaging error must then be logged (E-18) before the gate (§1.7) lets the shipment move on. FPY (KPI-4) uses attempt 1 only.
 - audit `SHIPMENT_VERIFY`.
-Responses: 200 `{ "data": { ...ShipmentDetail, "verification": {attempt} } }` | 403 `FORBIDDEN` / `VERIFIER_SAME_AS_PACKER` / `CSRF_INVALID` | 404 | 409 | 422.
+Responses: 200 `{ "data": { ...ShipmentDetail, "verification": {attempt} } }` | 403 `FORBIDDEN_ROLE` / `VERIFIER_SAME_AS_PACKER` / `CSRF_INVALID` | 404 | 409 | 422.
 
 ### E-12 POST /api/v1/shipments/{id}/actions/ship
 Roles: SHP, SUP (P-08); ADM, RCV, QUA, VWR 403.
@@ -390,7 +397,7 @@ Roles: SHP, QUA, SUP (P-09). Request `{ "hold_reason_id": int (category hold), "
 Roles: QUA, SUP only (P-10, Matrix R-6); SHP 403. Request `{ note? }`. Rules: status On Hold. Effects: status → `held_from_status`; hold fields cleared (retained in history note); audit `SHIPMENT_RELEASE`. The packer and verifier stay as they were.
 
 ### E-15 POST /api/v1/shipments/{id}/actions/cancel
-Roles: SUP, SHP (P-11); others 403. Request `{ "reason": string 1..500 }` (required; stored as the history note and in audit). Rules: status ∈ Planned, Ready to Pack, Packing, Verified, Rework, On Hold; else 409. **Matrix R-5:** SHP only when the **current** status is Planned or Ready to Pack; otherwise 403 `FORBIDDEN_CANCEL_AT_STATUS` (including On Hold). Effects: → Cancelled (read-only; excluded from every KPI); no ledger effect (nothing is posted before ship); audit `SHIPMENT_CANCEL`.
+Roles: SUP, SHP (P-11); others 403. Request `{ "reason": string 1..500 }` (required; stored as the history note and in audit). Rules, in order: **Matrix R-5** (§1.3 step 5, status read from the locked row): SHP only when the **current** status is Planned or Ready to Pack; at any other status (Packing, Verified, Rework, On Hold, and also Shipped or Cancelled) → **403 `FORBIDDEN_CANCEL_AT_STATUS`** (a role rule, not 409; T-9). Then, for SUP, status ∈ Planned, Ready to Pack, Packing, Verified, Rework, On Hold, else 409 `INVALID_TRANSITION` (Shipped, Cancelled). Effects: → Cancelled (read-only; excluded from every KPI); no ledger effect (nothing is posted before ship); audit `SHIPMENT_CANCEL`.
 
 ### E-16 POST /api/v1/shipments/{id}/actions/reopen
 Roles: SHP, SUP (P-06 [P]). Request `{ note? }`. Rules: status Rework (else 409); **rework gate** (§1.7) for origins `VERIFICATION_FAILED` and `ERROR_LOGGED` → 409 `REWORK_GATE_NOT_MET`. Effects: → Packing; `packed_by` = **caller** (new current packer; the earlier packer may now verify, the new one may not: Matrix R-1 / US-020); `rework_origin` cleared; audit `SHIPMENT_REOPEN`.
@@ -405,7 +412,7 @@ Roles: SHP, SUP (P-06 [P]). Request `{ note? }`. Rules: status Rework (else 409)
 Roles: all. Filters: `status, category, severity, detected_stage` (multi), `shipment_id` (or `shipment_no`), `from`/`to` (date of `detected_at`), `overdue=true`, `needs_recategorisation=true`. Sort: `error_no, detected_at, severity, status` (default `-detected_at`). Rows carry `rework_minutes_total` and `corrective_action_status` ("None" or the least-complete linked status).
 
 ### E-18 POST /api/v1/packaging-errors
-Roles: SHP, QUA, SUP (P-12); ADM, RCV, VWR 403. **Matrix R-8:** SHP only for `detected_stage = "Before ship"`; an After-ship error from SHP → 403 `FORBIDDEN_AFTER_SHIP_ERROR`.
+Roles: SHP, QUA, SUP (P-12); ADM, RCV, VWR 403. **Matrix R-8 (P-12 Y\* for SHP):** SHP logs **Before-ship errors only**; if the request has `detected_stage = "After ship"` **or** the shipment's DB status is Shipped, SHP gets **403 `FORBIDDEN_AFTER_SHIP_ERROR`** (T-18); QUA and SUP may log both.
 Request:
 ```json
 { "shipment_id": 31, "shipment_line_id": null, "detected_at": null, "detected_by_role": "Verifier",
@@ -413,7 +420,7 @@ Request:
   "severity": "Major", "description": "Packing slip lists rev B; parts are rev C" }
 ```
 Validation (422): enums as §2; `description` 1..1000; `detected_at` timestamp, default `business_now`, not later than `business_now + 5 min`; `shipment_line_id` (if given) belongs to the shipment; **`paperwork_subtype` required when category is Paperwork and forbidden otherwise**; `detected_by_role = Customer` requires stage After ship; stage After ship allows only detected_by Quality or Customer; stage Before ship allows Packer, Verifier or Quality [A]. Root cause is **not** accepted here (P-14 is Quality/Supervisor; set it via E-20) [P, differs from docs/08 F4's "optional root cause"].
-State rules (409 `STAGE_STATUS_MISMATCH`): Before ship requires the shipment status ∉ {Shipped, Cancelled}; After ship requires status Shipped (Delivered is not built).
+State rules after the role rules (409 `STAGE_STATUS_MISMATCH`, so reachable by QUA/SUP, or by SHP only for a Cancelled shipment): Before ship requires the shipment status ∉ {Shipped, Cancelled}; After ship requires status Shipped (Delivered is not built).
 Effects (one transaction): `error_no` = `PE-` + sequence, status **Open**, `reported_by` = caller. **If stage is Before ship and shipment status ∈ {Packing, Verified}** → shipment → **Rework**, `rework_origin = ERROR_LOGGED`, `verified_by` cleared, history note "Packaging error PE-nnnn". In any other status no shipment change (a failed verification already put it in Rework; an After-ship error never changes the shipment). Audit `PACKAGING_ERROR_CREATE` (and `SHIPMENT_UPDATE` row if the status moved).
 Responses: 201 + PackagingError | 403 | 404 | 409 | 422.
 
@@ -424,7 +431,7 @@ Roles: all. 200 PackagingError with linked rework events and corrective actions.
 Roles: QUA, SUP (P-14); **SHP 403** (they may log but not edit root cause, US-031). Request: `{ "root_cause_category"?: enum, "root_cause_note"?: string ≤ 2000 }` (at least one; `null` clears). Rules: 409 `ERROR_CLOSED` when Closed. Effects: audit `PACKAGING_ERROR_UPDATE` old→new. The 5 Whys note is `root_cause_note`. No other field is editable in v1 core (log fields are write-once) [A].
 
 ### E-21 POST /api/v1/packaging-errors/{id}/actions/contain
-Roles: QUA, SUP (P-14 [A: matrix only names "close"; containment treated as the same decision, Sasha/Priya to confirm]). Rule: status Open → Contained (else 409 `INVALID_TRANSITION`). Audit `PACKAGING_ERROR_CONTAIN`.
+Roles: QUA, SUP (P-14; the reviewed matrix names "close" only, containment is treated as the same decision [A], Priya to confirm). Rule: status Open → Contained (else 409 `INVALID_TRANSITION`). Audit `PACKAGING_ERROR_CONTAIN`.
 
 ### E-22 POST /api/v1/packaging-errors/{id}/actions/close
 Roles: QUA, SUP (P-14). Rules: status Open or Contained (Closed → 409 `ERROR_CLOSED`); **`root_cause_category` must be set** and, for **Before ship** errors, **at least one completed rework event** exists → else 409 `CLOSE_PRECONDITION_FAILED` (`details.missing` = [`root_cause`, `completed_rework`]). After-ship (customer-found) errors need no rework [A]. Open corrective actions do not block close [A]. Effects: status Closed; audit `PACKAGING_ERROR_CLOSE`.
@@ -479,7 +486,7 @@ Roles: all (P-03). Filters `part_id, location_id, lot_number, include_zero` (def
 Roles: all. Read-only ledger listing (R5 as a report is deferred; this is the plain list used by tests and lot trace). Filters `part_id, lot_number, txn_type, location_id, reference_type, reference_id, from/to` (UTC date of `txn_at`). Sort `txn_at, id` (default `-txn_at`).
 
 ### E-34 POST /api/v1/inventory-transactions
-Roles: base permission SUP, RCV, QUA (P-16); SHP, ADM, VWR 403. Only three types can be posted by hand; RECEIPT, SHIP and ADJUST are created by E-30, E-12 and E-40 respectively, and any other `txn_type` (including ADJUST, "manual adjustment is deferred", US-040) → 422 `fields.txn_type`.
+Roles: base permission SUP, RCV\*, QUA\* (P-16); SHP, ADM, VWR 403 `FORBIDDEN_ROLE`. Only three types can be posted by hand; RECEIPT, SHIP and ADJUST are created by E-30, E-12 and E-40 respectively, and any other `txn_type` (including ADJUST, "manual adjustment is deferred", US-040) → 422 `fields.txn_type`.
 Request (discriminated on `txn_type`):
 ```json
 { "txn_type": "TRANSFER", "part_id": 7, "lot_number": "L2611-004", "from_location_id": 5, "to_location_id": 4, "qty": 40 }
@@ -487,15 +494,16 @@ Request (discriminated on `txn_type`):
 { "txn_type": "PRODUCTION_COMPLETE", "part_id": 7, "lot_number": "L2612-001", "location_id": 9, "qty": 200 }
 ```
 Rules: `qty` integer 1..1,000,000 (the server signs it); part and locations active; for TRANSFER `from != to`; SCRAP `reason_code_id` category `scrap` (required); PRODUCTION_COMPLETE location type **FG**; TRANSFER / SCRAP quantity ≤ on-hand at the source (part, location, lot) under lock, else 409 `INSUFFICIENT_STOCK` (`details.available`).
-Conditional roles:
-- **Matrix R-7:** a TRANSFER **from**, or a SCRAP **at**, a location of type **Hold** needs QUA or SUP. RCV → 403 `FORBIDDEN_HOLD_RELEASE`. (Scrap at Hold extends R-7 [A], Sasha to confirm.) Receiving may transfer **into** Hold.
-- QUA (Y*): only transfers from or scrap at a Hold location (i.e., dispositioning held material); anything else, including PRODUCTION_COMPLETE → 403 `FORBIDDEN_NON_HOLD_TXN` [A, matrix marks QUA "Y*" without text].
+Conditional roles (§1.3 step 5; the rule is decided by the **type of the source location read from the DB in the same transaction**, never by a request flag; T-13, T-19):
+- **Matrix R-7:** any movement **out of** a Hold-type location, a TRANSFER whose `from_location` is Hold or a SCRAP at a Hold location, needs QUA or SUP. RCV → **403 `FORBIDDEN_HOLD_RELEASE`**. RCV may transfer, scrap and record PRODUCTION_COMPLETE for stock not in a Hold location, and may transfer **into** a Hold location.
+- **QUA (Y\*):** only a TRANSFER into or out of a Hold location (source or destination is Hold) and a SCRAP at a Hold location (disposition of held material). Anything else, including PRODUCTION_COMPLETE or a transfer between two non-Hold locations → **403 `FORBIDDEN_NON_HOLD_TXN`**.
+- SUP: all three types.
 Effects (one transaction): TRANSFER posts **two** rows (`-qty` at source, `+qty` at destination) sharing one `transfer_group`; either both are stored or neither. SCRAP posts `-qty`. PRODUCTION_COMPLETE posts `+qty`. `reference_type = 'manual'`. Audit `INVENTORY_TXN_CREATE` (lists the txn ids).
 Responses: 201 `{ data: { transactions: [Transaction…] } }` | 403 | 409 `INSUFFICIENT_STOCK` | 422.
 
 ### 7.1 Cycle counts (F9; docs/03 §3.4)
-**CycleCount**: `id, count_no, scheduled_date, status, scope { abc_class|null, location {id, code}|null }, created_by, created_at, submitted_at|null, approved_by|null, approved_at|null, line_count, counted_count`, and in the detail `lines[]`.
-**Line** (always): `id, part {id, part_number, revision, abc_class}, location {id, code}, lot_number, counted_qty|null, recount_qty|null, recount_required (counted_qty set, out of tolerance, recount_qty null), counted_by|null, counted_at|null`.
+**CycleCount**: `id, count_no, scheduled_date, status, scope { abc_class|null, location {id, code}|null }, created_by, created_at, submitted_at|null, approved_by|null, approved_at|null, line_count, counted_count`, and in the detail `lines[]` plus `can_approve` (true only when the caller is SUP, the count is Counted and the caller entered or recounted no line; lets the UI show the S19 "unavailable" state) and `caller_entered_lines` (bool). `can_approve` is a hint; E-40 re-checks.
+**Line** (always): `id, part {id, part_number, revision, abc_class}, location {id, code}, lot_number, counted_qty|null, recount_qty|null, recount_required (counted_qty set, out of tolerance, recount_qty null), counted_by|null, counted_at|null, recounted_by|null, recounted_at|null` (the counter ids are visible to every role that can open the count; R-4 needs them).
 **Line, restricted fields** `system_qty, variance (counted_qty - system_qty), within_tolerance, final_qty (recount_qty if set else counted_qty), final_variance, adjustment_txn_id`: returned **only** when the count is `Counted` and the caller is SUP or ADM, or the count is `Approved` and the caller is any role. For an **Open** count the fields are absent for **every** role (including Supervisor) and absent from the response body, not merely hidden in the UI (US-043: blind count). `recount_required` tells a counter to recount without revealing the system quantity.
 Tolerance (docs/03 §3.3, settings): `within_tolerance` iff `abs(variance) <= system_qty * tolerance_pct / 100` for the part's ABC class (defaults A 0, B 2, C 5), computed on the **first** count.
 
@@ -520,12 +528,12 @@ Response 200: `{ "data": { "count_no", "status", "lines": [ { "line_id", "counte
 Roles: RCV, SUP (P-18). Rules: status Open (else 409 `INVALID_COUNT_STATE`); every line has `counted_qty` and every out-of-tolerance line has `recount_qty`, else 422 `COUNT_INCOMPLETE` (`details.line_ids`). Effects: status **Counted**, `submitted_at`; audit `CYCLE_COUNT_SUBMIT`. Response 200 CycleCount.
 
 ### E-40 POST /api/v1/cycle-counts/{id}/actions/approve
-Roles: **SUP only** (P-19, Matrix R-3); SHP, RCV, QUA, ADM, VWR 403 (`FORBIDDEN`).
+Roles: **SUP only** (P-19\*, Matrix R-3); SHP, RCV, QUA, ADM, VWR 403 `FORBIDDEN_ROLE`.
 Request `{ "reason_code_id": int (category adjust; required when at least one line has a final variance), "note"?: string ≤ 500 }`.
-Rules: status must be Counted (Open → 409 `INVALID_COUNT_STATE`; **Approved → 409 `ALREADY_APPROVED`**, no second adjustment, enforced by the row lock plus status check). **Matrix R-4 [P, pending Sasha]:** if the caller entered any count or recount on this count → 403 `APPROVER_ENTERED_COUNT` (remove this one rule if Sasha rejects it).
+Rules, in order: (1) **Matrix R-4 (accepted into v1 core), inside the approve transaction under the count's row lock:** if the caller (id from the session) entered **or recounted any line** of this count (`counted_by` / `recounted_by`) → **403 `APPROVER_SAME_AS_COUNTER`**, audited, nothing changes (T-15). In the seed, counts are entered by `demo.receiver`, so `demo.supervisor` can approve them. (2) Status must be Counted (Open → 409 `INVALID_COUNT_STATE`; **Approved → 409 `ALREADY_APPROVED`**, no second adjustment, guaranteed by the row lock plus the status check). (3) `reason_code_id` required (422) when at least one line has a final variance.
 Effects (one transaction, advisory locks on all affected (part, lot)): for each line with `final_qty != system_qty` post one **ADJUST** row for `final_qty - system_qty` at the line's location (`reference_type = 'cycle_count'`, `reference_id` = count id, the given reason code, `txn_at` = real now). Example: system 100, count 96, recount 96, class A → ADJUST of −4, on-hand 96 (AC-5). Then status **Approved**, `approved_by`, `approved_at`, `approved_business_date` (§1.6), audit `CYCLE_COUNT_APPROVE` with the adjustment ids. If any adjustment would drive current on-hand below zero → 409 `ADJUST_WOULD_GO_NEGATIVE`, nothing is posted. Lines of an approved count feed KPI-7 by `approved_business_date`.
 Snapshot drift [P]: the adjustment uses the **snapshot** variance as specified (US-044). If current on-hand differs from the snapshot for a line, approval still proceeds and the response carries `warnings: [ { line_id, code: "ON_HAND_CHANGED_SINCE_SNAPSHOT", snapshot_qty, current_qty } ]`. Stock should not move during a count (docs/03 §3.4); there is no freeze mechanism in v1.
-Response 200 `{ data: { ...CycleCount (restricted fields now visible), adjustments: [ {line_id, txn_id, qty_change} ], warnings: [] } }`. Never a "reject count" path in v1 core.
+Response 200 `{ data: { ...CycleCount (restricted fields now visible; `can_approve` false), adjustments: [ {line_id, txn_id, qty_change} ], warnings: [] } }`. Never a "reject count" path in v1 core.
 
 ### E-41 GET /api/v1/lot-trace/{lot_number}
 Roles: all (P-03). Lot is upper-cased and validated (`^[A-Z0-9-]{3,30}$`, else 422).
@@ -651,9 +659,9 @@ Roles: **ADM only** (P-24; everyone else 403, T-11). Filters `user_id`, `action`
 ### E-52 POST /api/v1/admin/demo-reset
 Roles: **ADM only** (P-25, Matrix R-9). Needs the CSRF token and the JSON content type like every write.
 Request `{ "confirm": "RESET DEMO DATA" }` (exact string, else 422 `fields.confirm`).
-Order of checks: session → CSRF/content type → role (non-Admin 403 in **every** environment, even when disabled) → `DEMO_RESET_ENABLED === "true"` else 404 `FEATURE_DISABLED` (the feature is absent by default on previews and production) → confirmation (422) → lock.
-Effects: (1) write `DEMO_RESET` audit entry in its own committed transaction **before** anything is cleared; (2) take `pg_advisory_lock` (a second concurrent reset → 409 `RESET_IN_PROGRESS`); (3) one transaction: `TRUNCATE … RESTART IDENTITY CASCADE` on the business tables (append-only triggers permit TRUNCATE), run the deterministic seed generator (`src/lib/seed/`, same code as `npm run db:reset-seed`), restore default settings (fixed mode, 2026-11-25), re-insert a `DEMO_RESET` audit row naming the actor and time (the earlier row does not survive the truncate; see Q-M); (4) all sessions are cleared, **including the caller's**, so the response clears the cookie and the Admin signs in again. Minimum 60 s between resets [P]. Must finish within the 60 s function limit (ADR-001 R4).
-Responses: 200 `{ "data": { "reset": true, "duration_ms": 640, "counts": { "shipments": 300, … } } }` | 403 | 404 `FEATURE_DISABLED` | 409 | 422.
+Order of checks (Matrix R-9, T-20, S-28): session (401) → **`DEMO_RESET_ENABLED === "true"`, else 404 `FEATURE_DISABLED` for every signed-in role** (the feature is absent by default on previews and production) → CSRF / content type (403 / 415) → role (non-Admin 403 `FORBIDDEN_ROLE`, audited) → body and `confirm` (400 / 422) → **cooldown: at most one accepted reset per 10 minutes, `last_demo_reset_at` recorded in the DB (a settings row written after the reseed, so the truncate does not erase it) → 429 `RESET_COOLDOWN` with `Retry-After`** → lock (409).
+Effects: (1) write `DEMO_RESET` audit entry in its own committed transaction **before** anything is cleared; (2) take `pg_advisory_lock` (a second concurrent reset → 409 `RESET_IN_PROGRESS`); (3) one transaction: `TRUNCATE … RESTART IDENTITY CASCADE` on the business tables (append-only triggers permit TRUNCATE), run the deterministic seed generator (`src/lib/seed/`, same code as `npm run db:reset-seed`), restore default settings (fixed mode, 2026-11-25), re-insert a `DEMO_RESET` audit row naming the actor and time (the earlier row does not survive the truncate; decided: re-insert, security plan §9, test S-29 checks the row exists); (4) **all sessions are ended**, including the caller's, so the response clears the cookie and the Admin signs in again. The seed rebuilds the demo users with their configured passwords (the deployed `demo.admin` password comes from the secret `DEMO_ADMIN_PASSWORD`, inactive if unset; seed concern, security plan §11) and the login-attempt counters. Must finish within the 60 s function limit (ADR-001 R4).
+Responses: 200 `{ "data": { "reset": true, "duration_ms": 640, "counts": { "shipments": 300, … } } }` | 403 | 404 `FEATURE_DISABLED` | 409 | 422 | 429 `RESET_COOLDOWN`.
 
 ---
 
@@ -662,7 +670,7 @@ Responses: 200 `{ "data": { "reset": true, "duration_ms": 640, "counts": { "ship
 ### 12.1 Endpoints to stories (V1-CORE) and scope §3 items
 | Story | Endpoints | Notes |
 |-------|-----------|-------|
-| US-001 (+US-002) Login, logout, hashed passwords | E-01, E-02, E-03, E-04 | scrypt, no default credentials, generic failure; bootstrap of the first Admin in non-demo mode is a script, not an endpoint |
+| US-001 (+US-002) Login, logout, hashed passwords | E-02, E-03, E-04 | scrypt, no default credentials, generic failure; bootstrap of the first Admin in non-demo mode is a script, not an endpoint |
 | US-003 Role enforcement, 403 | all writes; E-51, E-52 | §1.3 order, §13 permission tests |
 | US-005 (+US-006) Audit log and Admin view | audit on every write (§1.8); E-51 | |
 | US-007 Lookups | E-42, E-43, E-44 | P-20 |
@@ -695,7 +703,7 @@ Responses: 200 `{ "data": { "reset": true, "duration_ms": 640, "counts": { "ship
 | US-081, US-083 Deployed demo, skeleton | E-52, E-04 (banner data) | banner itself is UI |
 | US-012, US-013 Seed | none (seed uses the same domain functions or must satisfy the same invariants) | |
 
-Scope §3 items: 3.1 → E-05..E-16 · 3.2 → E-17..E-28 · 3.3 → E-29..E-41 · 3.4 → E-45..E-50 · 3.5 → §1.2, §1.3, §1.8, E-01..E-04, E-51 · 3.6/3.7 → E-52.
+Scope §3 items: 3.1 → E-05..E-16 · 3.2 → E-17..E-28 · 3.3 → E-29..E-41 · 3.4 → E-45..E-50 · 3.5 → §1.2, §1.3, §1.8, E-02..E-04, E-51 · 3.6/3.7 → E-52.
 
 ### 12.2 Scope §5 acceptance criteria to endpoints
 | AC | Criterion | Endpoints that deliver it |
@@ -714,68 +722,3 @@ Scope §3 items: 3.1 → E-05..E-16 · 3.2 → E-17..E-28 · 3.3 → E-29..E-41 
 
 ---
 
-## 13. Permission and security test checklist (US-080, matrix T-1 to T-14)
-For every row, the test asserts the status code, that **nothing changed** (row counts, ledger sums, status), and that an `ACCESS_DENIED` audit row exists for 403s. For each write route also run: no token → 403 `CSRF_INVALID`; forged `Origin` + JSON → 403; `text/plain` and form content types → 415; no session → 401.
-
-| Action (matrix) | Allowed | Must get 403 (test at least) | Matrix scenario |
-|-----------------|---------|------------------------------|-----------------|
-| P-04 E-06, E-08 | SHP, SUP | ADM, RCV, QUA, VWR | T-6, T-10 |
-| P-05/06 E-09, E-10, E-16 | SHP, SUP | ADM, RCV, QUA, VWR | T-6 |
-| P-07 E-11 | SHP, QUA, SUP (not the packer) | ADM, RCV, VWR; **the packer in any role** (`VERIFIER_SAME_AS_PACKER`) | T-1..T-6 |
-| P-08 E-12 | SHP, SUP | ADM, RCV, QUA, VWR | T-6, T-8 |
-| P-09 E-13 | SHP, QUA, SUP | ADM, RCV, VWR | |
-| P-10 E-14 | QUA, SUP | SHP, RCV, ADM, VWR | |
-| P-11 E-15 | SUP any pre-ship status; SHP Planned / Ready only | SHP at Packing, Verified, Rework, On Hold (`FORBIDDEN_CANCEL_AT_STATUS`), QUA, RCV, ADM, VWR | T-9 |
-| P-12 E-18 | SHP (Before ship), QUA, SUP | ADM, RCV, VWR; SHP with After ship (`FORBIDDEN_AFTER_SHIP_ERROR`) | T-6 |
-| P-13 E-24, E-25 | SHP, QUA, SUP | ADM, RCV, VWR | |
-| P-14 E-20..E-22, E-27, E-28 | QUA, SUP | SHP, RCV, ADM, VWR | |
-| P-15 E-30 | RCV, SUP | SHP, QUA, ADM, VWR | T-6 |
-| P-16 E-34 | RCV, SUP; QUA from Hold only | RCV out of Hold (`FORBIDDEN_HOLD_RELEASE`), QUA elsewhere, SHP, ADM, VWR | T-13 |
-| P-17 E-36 | SUP | all others | |
-| P-18 E-38, E-39 | RCV, SUP | SHP, QUA, ADM, VWR | |
-| P-19 E-40 | SUP (not the counter, R-4) | RCV, SHP, QUA, ADM, VWR | T-7, T-8 |
-| P-20 E-43, E-44 | ADM, SUP | SHP, RCV, QUA, VWR | T-7 |
-| P-21 E-46 | ADM, SUP | SHP, RCV, QUA, VWR | T-7 |
-| P-22 E-47 | ADM | SUP and all others | T-11 |
-| P-24 E-51 | ADM | all others | T-11 |
-| P-25 E-52 | ADM (flag on) | all others (flag on and off); ADM with flag off gets 404 | T-11 |
-| Unauthenticated | none | every endpoint except E-01, E-02 → 401 | T-12 |
-| CSRF | n/a | every write without token, with foreign Origin, or with a wrong content type | T-14 |
-
-Fixture checks owned by the domain tests: AC-5 count (100 / 96, class A → ADJUST −4, on-hand 96); transfer fixture (receipt 100, ship 30, transfer 20 out, scrap 5 → source 45, destination 20); ship fixture (receipt 100 of `L2611-004`, ship 40 → 60); R1 count equals the list count for the same filters; CSV guard (`=1+1`, `+x`, `-x`, `@x`, `\t=x` prefixed; numeric −4 unchanged).
-
----
-
-## 14. Requests and open questions
-
-### 14.1 Schema requests for Dana (docs/08 names kept; additions flagged)
-1. New table **`shipment_verification`**: `id, shipment_id, attempt_no, result (Pass|Fail), verified_by, packer_id, verified_at, business_date, checklist jsonb, failed_items text[], note` (unique `shipment_id, attempt_no`). Needed by US-019/US-020/FPY; not in docs/08.
-2. `shipment`: add `rework_origin` (enum, nullable), `held_from_status`, `hold_owner_dept`, `verified_at`. `shipment_line`: add `short_note`. (`packed_by`, `verified_by`, `hold_reason_id`, `late_reason_id` exist.)
-3. `shipment_status_history`: add `business_date date not null`. `rework_event`: add `completed_business_date`; `reverified_ok` is server-managed. `cycle_count`: add `scope_abc_class`, `scope_location_id`, `submitted_at`, `approved_business_date`. `cycle_count_line`: add `counted_by`, `counted_at`, `recounted_by`, `recounted_at`, `adjustment_txn_id`.
-4. `inventory_transaction`: add `transfer_group` (uuid or bigint) to link the two TRANSFER legs; `lot_number` stored upper-case; append-only triggers on it, `shipment_status_history` and `audit_log` (already in ADR-001 §5).
-5. `reason_code`: add `active`. `setting`: keys listed in §8. `audit_log`: no hard FK to `user` that would block the demo reset.
-6. `session` table (SHA-256 of token, user_id nullable for anonymous rows, csrf_token, created_at, last_seen, expires_at) and a login-attempt table for the DB-backed rate limit (ADR-003).
-7. Sequences for `SH-`, `PE-`, `RC-`, `CC-` numbers (start above the seed maxima); `minutes` on `rework_event` either generated or computed in the repo.
-
-### 14.2 Open questions and decisions needed
-| ID | Question | Owner |
-|----|----------|-------|
-| Q-A | **Blocking.** Business clock vs KPI period anchors (§1.6): confirm the `business_date` columns (this contract) versus storing event timestamps with `business_now`. Without one of them KPI-3/4/5/7 will not move for live records on any real date after the reporting date. | Marcus, Kenji, Dana, Olivia |
-| Q-B | `reopen` has no matrix row; treated as P-06. Add an explicit row. `contain` treated as P-14. | Priya, Sasha |
-| Q-C | Pre-login CSRF token via an anonymous session row (§1.3). Alternatives: signed double-submit token with an env secret. | Sasha, Marcus (ADR-003) |
-| Q-D | KPI-7 hit-rate: tolerance is evaluated on the **first** count; recount affects only the adjustment quantity. Confirm with docs/03 §3.3. | Kenji |
-| Q-E | Matrix R-4 (approver ≠ counter) is implemented as proposed; drop one check if rejected. | Sasha |
-| Q-F | Extensions of Matrix R-7: SCRAP at a Hold location also needs QUA/SUP; QUA (Y*) limited to Hold dispositions. | Sasha, Priya |
-| Q-G | Supervisor may edit `notes` on Shipped/Cancelled shipments (US-015 text) though P-04 says "before it ships". | Priya |
-| Q-H | Cancel by Shipping from On Hold is refused (R-5 reads the current status). Confirm. | Priya |
-| Q-I | Formats [A]: tracking `^[A-Za-z0-9-]{1,40}$`, lot `^[A-Z0-9][A-Z0-9-]{2,29}$`, hold owner departments, over-shipping refused, SHIP locations restricted to Stock/FG/Shipping. | Priya, Marcus |
-| Q-J | Edit-after-verify trigger fields (§E-08: customer, PO, line part/qty/lot/location). | Priya |
-| Q-K | Rework gate "same episode" is derived from timestamps (G1/G2). A `rework_episode` counter on `shipment` would be sturdier if Dana prefers. | Dana |
-| Q-L | Snapshot-drift handling on approval is a warning, not a block; no count freeze in v1. | Priya, Marcus |
-| Q-M | Demo reset truncates `audit_log`; the pre-reset audit row is lost and re-inserted. Alternative: exclude `audit_log` from the truncate. | Sasha, Dana |
-| Q-N | `GET /lookups/users` exposes display names and roles of active users to every role (owner dropdown). | Sasha |
-| Q-O | Page-level form handlers (urlencoded + `_csrf`) vs `fetch` JSON for all forms (dynamic shipment lines favour fetch). | Marcus, Felix |
-| Q-P | KPI and chart response shapes (§9). | Kenji |
-
-### 14.3 Change control
-Change this file first, then the code, in the same PR (api-contract skill). Matrix renumbering only touches the P-nn / R-n references. After Sasha's review the permission rows in §3 and §13 are regenerated from the final matrix.
