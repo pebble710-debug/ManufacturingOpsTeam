@@ -12,7 +12,7 @@ All data is **fictional** (`fictional-data-guardrails`). **Design only:** no gen
 4. **Final state, one transaction.** Every row is inserted in its final state (no later `UPDATE`, except the settings reset), in foreign-key order, in batches, inside one transaction. A failed validation rolls back and leaves the previous data intact.
 5. **Quotas, not luck.** Where scope or backlog demands a property (error 6-8 %, late 8-12 %, on-hold 5 %, accuracy 95-98 % and worse for C), the generator allocates **exact counts** (largest-remainder quotas) and then shuffles which records receive them. Independent coin flips would not guarantee the property for small n.
 6. **Consistent by construction, proven by queries.** The ledger is built by a chronological simulation that throws on a stock-out; section 9 lists the SQL invariants the generator runs before commit.
-7. **Real clock model (Option A).** Seed timestamps are the "real" timestamps of the simulated history; `business_date` is the UTC date of the timestamp. All seed events are **before `2026-11-25T00:00:00Z`**, so any live record created on or after the reporting date sorts after them.
+7. **Real clock model (Option A).** Seed timestamps are the "real" timestamps of the simulated history; `business_date` is the UTC date of the timestamp. All seed events are **before `2026-11-25T00:00:00Z`**, so any live record created on or after the reporting date sorts after them. Option A is confirmed by Marcus (T-016, D-1). `rework_event.completed_business_date` is a **generated** column: the generator never writes it.
 
 ## 2. Determinism machinery
 
@@ -234,7 +234,7 @@ SELECT l.id FROM cycle_count_line l JOIN cycle_count c ON c.id = l.cycle_count_i
 
 Distribution checks (band tests run by the generator and again by Vitest on the seeded database): the counts in section 5 (exact rows), `KPI` bands in section 10, peak versus other-week volume ratio between 1.9 and 2.5, labels + paperwork = the two largest categories, at least one error per severity, at least one On Hold shipment, at least one overdue corrective action, C-class first-count accuracy lower than A and B. A failed band is a generator calibration problem: adjust constants, never edit rows.
 
-**Seed disables two deferred triggers.** Inside its transaction the seed runs `ALTER TABLE inventory_transaction DISABLE TRIGGER inventory_transaction_nonnegative` and `... inventory_transaction_transfer_balanced`, inserts, validates with V-1 and the transfer query below, then re-enables both before commit. Reason: each firing takes a transaction-level advisory lock and about 750 ledger rows hold a few hundred of them in the shared lock table (default budget about 6,400 slots on a typical Postgres, shared with `TRUNCATE`). V-1 proves the same invariant. If Marcus prefers, leave the triggers enabled (open question DQ-8).
+**The deferred ledger triggers stay enabled (decided T-016, D-10).** The seed must not run `ALTER TABLE ... DISABLE TRIGGER`. That would be DDL in application code: the demo reset runs in a Netlify Function, and security plan 8.2 / AR-4 keep DDL in migrations only. Both triggers are checked at COMMIT, so insert order inside the transaction does not matter. The lock budget is fine: a few hundred distinct ledger keys against a lock table of about 64 x max_connections slots. V-1 and the transfer query below still run before commit, so the generator fails with a readable message instead of a trigger exception. Measure the commit time on Netlify (SQ-2).
 
 ```sql
 SELECT txn_group FROM inventory_transaction WHERE txn_group IS NOT NULL
@@ -326,15 +326,18 @@ BEGIN;
 TRUNCATE inventory_transaction, cycle_count_line, cycle_count, receipt, lot,
          rework_event, corrective_action, packaging_error,
          shipment_verification, shipment_status_history, shipment_line, shipment,
-         session, login_attempt, part, location, reason_code, carrier, supplier, customer, app_user
+         session, login_attempt, part, location, reason_code, carrier, supplier, customer, app_user,
+         audit_log
   RESTART IDENTITY CASCADE;
 -- NOT truncated: setting (config rows are reset with UPDATE ... SET value = default_value; the two
---   system rows survive), ref_shipment_transition (owned by migration 0001), audit_log (recommended: keep, DQ-1).
+--   system rows survive) and ref_shipment_transition (owned by migration 0001).
+-- audit_log IS truncated (decided T-016, D-5; contract E-52, security plan PD-9): visitor free text inside
+--   `changes` is wiped, and old record_ids cannot collide with the re-numbered records. The step-1 row
+--   survives only if this transaction rolls back, so it is evidence of failed attempts.
 -- 3. generate and insert everything (phases P1-P6), setval all sequences,
---    disable/enable the two deferred ledger triggers around the ledger insert,
 --    run the section-9 validation queries (any row -> RAISE -> ROLLBACK, old data stays),
 --    UPDATE setting SET value = <now ISO> WHERE key = 'last_demo_reset_at',
---    INSERT audit_log DEMO_RESET completed (actor, counts, checksum),
+--    INSERT audit_log DEMO_RESET (actor id, started_at, completed counts, checksum): the only audit row after a reset,
 COMMIT;
 ```
 
@@ -367,7 +370,7 @@ Tests: (1) reset twice -> equal checksums (US-011, S-29); (2) checksum equals th
 4. Reset with a Supervisor session -> 403; with `DEMO_RESET_ENABLED` unset -> 404; second reset inside the cooldown -> 429; after a reset the caller's session is gone and the `DEMO_RESET` audit rows exist.
 5. Seed with `DEMO_ADMIN_PASSWORD` unset in "deployed" mode -> `demo.admin` inactive; set -> can log in; the value is never printed (S-30).
 6. Fictional-only scan (S-31): customer/supplier/carrier names are the cast; emails `@example.com`; tracking prefixes `SLP`/`HFL`/`TAX`; no outbound network call in `src/lib/seed/`.
-7. Live-record test: with the seeded data and any real date after 2026-11-25, ship `SH-1286`, verify and ship -> KPI-1, KPI-4 (via verification business date), KPI-5 and KPI-6 change on the default period (acceptance criteria 1 and 11).
+7. Live-record test (fake clock at any real date after 2026-11-25): create a new shipment, pack, verify (fail), log an error, complete a rework, reopen, verify, ship. KPI-1, KPI-3, KPI-4 (verification business date), KPI-5 (`completed_business_date`) and KPI-6 change on the default period (acceptance criteria 1 and 11), and C3 gains the new error. Shipping the seeded `SH-1286` on a later real date also moves KPI-1, but its KPI-6 cycle time measures real elapsed time since the seeded Ready-to-Pack timestamp, which can be very long. This is an accepted limitation (D-1), so do not pin its KPI-6 value.
 
 ## 15. Open questions
 
@@ -375,8 +378,8 @@ Tests: (1) reset twice -> equal checksums (US-011, S-29); (2) checksum equals th
 |---|----------|-------|
 | SQ-1 | **First production seed** (DQ-9): a new deployed database has migrations only; the reset needs an Admin and `demo.admin` may be inactive. Options: run `db:reset-seed` once from a developer machine against the production connection string (needs `DEMO_ADMIN_PASSWORD` and the URL locally) or a one-time bootstrap path that works only while `app_user` is empty. | Theo, Sasha, Diego |
 | SQ-2 | Measure the seed on Netlify (60-second limit, scrypt memory of 128 MiB x 7 sequentially, DB wake-up). | Theo |
-| SQ-3 | Keep `audit_log` across resets (recommended) or truncate and re-insert (contract Q-M)? | Sasha, Diego |
-| SQ-4 | Disable the two deferred ledger triggers during the seed (section 9)? | Marcus |
+| SQ-3 | **Decided T-016:** truncate and re-insert (D-5) | closed |
+| SQ-4 | **Decided T-016:** no (D-10) | closed |
 | SQ-5 | Confirm the band values in section 10 are acceptable for the demo story (tiles below target in the default window). If Priya prefers a "healthy" first view, move the peak to 2026-09-14 .. 10-09 so the default window is the recovery period. | Priya, Kenji |
 | SQ-6 | Which KPI-7 variant is the tile (first count 88.2 % or after recount 94.1 % in the window)? | Kenji |
 | SQ-7 | Backlog US-012 asks for "a small number Delivered": not seeded because Delivered is deferred. | Priya |

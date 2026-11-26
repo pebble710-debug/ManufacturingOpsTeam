@@ -1,6 +1,7 @@
 # UI Specification — Version 1 Core
 
 **Task:** T-013 · **Owner:** Maya (ux-ui-designer) · **Date:** 2026-11-25 (revision 2: 2026-11-26) · **Status:** REVISION 2, ready for Felix (front end), Kenji (dashboard), Diego (API), Dana (data), Quinn (QA) review; aligned with the final [permissions matrix](../plan/permissions-matrix.md) (Sasha-reviewed) and [security plan](../security/security-plan.md); API wording checked against [api/contract.md](../api/contract.md)
+**T-016 architecture reconciliation (Marcus, 2026-11-26):** small alignment edits marked *(T-016)* in S04, S06, S07, S10, S12, S13, S19, S23, S24, S25 and section 14 (decisions in [plan/consistency-review.md](../plan/consistency-review.md)).
 **Revision 2 changes:** Viewer kept and seeded (read-only guest); Admin never sees operational actions (R-2); R-4 adopted (S19, S18); R-7 covers scrap and limits Quality to Hold moves (S16); Shipping cannot cancel from On Hold (R-5); demo reset cooldown, 404 when off, sessions ended (S23); unpublished deployed Admin password (S01); session timeout, 429 and generic error UX (new section 2.6, S01, S26); CSP-friendly front-end rules (new section 10.1); Rework gate applies to "Start packing again" (4.10, S05, S06); section 14 shows which questions are answered.
 **Scope contract:** [project-scope.md](../project-scope.md) (V1-CORE, 11 acceptance criteria). **Stories:** [plan/backlog.md](../plan/backlog.md) §3.1 (authoritative release index). **Roles:** [plan/permissions-matrix.md](../plan/permissions-matrix.md). **Stack:** [ADR-001](../ADR-001.md) (Astro server-rendered pages, plain CSS with tokens, HTML forms with POST, progressive enhancement only, Chart.js bundled).
 **Tags:** [R] researched, [A] assumption, [P] proposed (project convention). All names, parts, lots and values in wireframes are **fictional** and illustrative; KPI numbers in wireframes are not seed values.
@@ -729,7 +730,7 @@ Accessibility: filter form is a labelled group; table caption "Shipments, 25 per
 New shipment                                  (Edit: "Edit shipment SH-1042")
 [ErrorSummary when invalid]
 Edit-warning (only when editing a Verified shipment):
- [!] Check: Saving changes to part, revision, quantity or lot sends SH-1042 back to Rework.
+ [!] Check: Saving changes to the customer, customer PO, or a line's part, quantity, lot or location sends SH-1042 back to Rework.
      It will have to be verified again.                                                    (1)
 -- Header --------------------------------------------------------------------------------
 Customer (required)            [Select customer v]
@@ -831,16 +832,17 @@ Verifying as: Demo Quality (Quality).   Current packer: Demo Shipper One since 2
 +-------------------------------------------------------------------------------------------------+
 [ErrorSummary]
 <h2>Checklist</h2>   Answer every item: Pass or Fail.            Progress: 0 of 8 answered   (2) aria-live
-Item                                         Pass   Fail   Note (required if Fail)
-1 Part number matches                        ( )    ( )    [______________]
+Item                                         Pass   Fail
+1 Part number matches                        ( )    ( )
    Compare label, packing slip and parts with line 1 (CRC-2041).
-2 Revision matches                           ( )    ( )    [______________]
-3 Quantity matches                           ( )    ( )    [______________]
-4 Lot recorded                               ( )    ( )    [______________]
-5 Labels match                               ( )    ( )    [______________]
-6 Packing slip matches                       ( )    ( )    [______________]
-7 C of C present (shown only when a part requires it)  ( ) ( ) [__________]
-8 Packaging method follows the instruction   ( )    ( )    [______________]
+2 Revision matches                           ( )    ( )
+3 Quantity matches                           ( )    ( )
+4 Lot recorded                               ( )    ( )
+5 Labels match                               ( )    ( )
+6 Packing slip matches                       ( )    ( )
+7 C of C present (shown only when a part requires it)  ( ) ( )
+Note (required if any item fails)  [ .............................................. ]   (T-016: one note per attempt)
+8 Packaging method follows the instruction   ( )    ( )
   [ Mark Verified ]   [ Fail verification and send to Rework ]                              (3)
   Mark Verified needs all items on Pass. Fail verification needs at least one Fail and a note.
 -- Attempts so far ------------------------------------------------------------------------------
@@ -870,7 +872,7 @@ What the verifier will check (read-only)
 
 Annotations
 1. The page always states **who is verifying** and **who the current packer is**, so a user knows before acting whether it will be allowed. For a packer it is the same person; the page then renders State B.
-2. Each item is a `<fieldset>` with a `<legend>` (item text) and two radios "Pass" and "Fail" (44 px rows), both **unselected by default** (no pre-answered items; unanswered counts as not passed). The note input per item is always in the DOM and labeled "Note for item 5 (required if Fail)"; with JavaScript the note is shown only when Fail is chosen. The progress text is static text on load and a live counter with JavaScript ("5 of 8 answered, 0 failed", `aria-live="polite"`).
+2. Each item is a `<fieldset>` with a `<legend>` (item text) and two radios "Pass" and "Fail" (44 px rows), both **unselected by default** (no pre-answered items; unanswered counts as not passed). *(T-016, D-15)* There is **one** note field per attempt, labelled "Note (required if any item fails)", always in the DOM (the API stores one `note`, max 500 characters). With JavaScript, its label gains "(required)" as soon as one Fail is chosen. The progress text is static text on load and a live counter with JavaScript ("5 of 8 answered, 0 failed", `aria-live="polite"`).
 3. **Two explicit outcome buttons** (no generic "Submit"). Mistake-proofing messages if the wrong one is pressed: Mark Verified with any Fail or unanswered item, or Fail verification with no Fail item (copy in 7.2). Fail verification is a **danger** button with a warning icon; it moves the shipment to Rework and saves the failed items.
 4. **Why it is unavailable** (State B). The buttons are `aria-disabled="true"`, reachable by keyboard, and described by `#why-unavailable` (4.8). With JavaScript, activating one moves focus to the Note. Without JavaScript the POST reaches the server and returns 403 with the same wording (section 7.2 `E-VER-1`). **The server always enforces; the page only explains.** A Supervisor or Quality user who packed gets the same State B (T-4).
 5. After **Mark Verified**: redirect to S05 with "Saved: SH-1042 is Verified. Next: ship it." After **Fail**: redirect to S05 with "Verification failed. SH-1042 moved to Rework. Log the packaging error next." and a button to S10 with the shipment pre-selected (full pre-fill from failed items is later, US-028).
@@ -902,14 +904,14 @@ Late reason                    [Select reason v]                                
 -- Lines shipped ------------------------------------------------------------------------------
 Line | Part               | Ordered | Qty shipped (required) | Ship from lot and location (required)
  1   | CRC-2041-B         | 50      | [ 50 ]                 | [L2611-004 - STK-A01 - 120 available v]   (2)
-Note if any line ships short:  [ ....................................... ]                       (3)
+     Short-ship note for line 1 (required if it ships fewer than ordered) [ ................ ]        (3)
 [ Ship SH-1042 ]   Cancel
 ```
 
 Annotations
 1. Late reason: the field is always in the page. Server rule: required when ship date is after promise date (hint text states this). With JavaScript the label gains "(required)" and a live notice "This shipment will ship N days late." when the date changes; if the reporting date already exceeds the promise date on load, the page renders it as required.
-2. One combined select per line, **"lot - location - available"**, limited to rows with stock for that part. This prevents typing a wrong lot and shows availability (US-041). If a part has no stock, the select shows "No stock available for CRC-2041-B" and the Ship button is Unavailable with the same text. [P: the select can be long; at most about 10 rows per part in seed data.]
-3. Short shipping: if a shipped quantity is less than ordered, a note is required and the page states "This shipment will not count as in full for OTIF."
+2. One combined select per line, **"lot - location - available"**, limited to rows with stock for that part in Stock, FG or Shipping locations (never Hold or Receiving, contract E-12) *(T-016)*. This prevents typing a wrong lot and shows availability (US-041). If a part has no stock, the select shows "No stock available for CRC-2041-B" and the Ship button is Unavailable with the same text. [P: the select can be long; at most about 10 rows per part in seed data.]
+3. Short shipping: if a line's shipped quantity is less than ordered, **that line's** short-ship note is required (API `lines[].short_note`, *T-016*) and the page states "This shipment will not count as in full for OTIF."
 4. Tracking is optional only for Customer Pickup (US-021). The carrier select shows mode text; with JavaScript the label toggles "(required)" text. Without JavaScript the hint "Not needed for Customer Pickup" is permanent and the server decides.
 5. The submit button names the record ("Ship SH-1042") because shipping posts SHIP ledger transactions and cannot be undone. Atomic: status and ledger change together or not at all (US-041).
 6. Admin, Receiving, Viewer see no form (read-only note). Status not Verified: **Blocked panel** replaces the form (409 in place), with a link back.
@@ -987,8 +989,7 @@ Paperwork type (required when category is Paperwork)
                             [Select v]  Packing slip - BOL - C of C - Customer-specific form - Commercial invoice   (4)
 Severity (required)         ( ) Minor   ( ) Major   ( ) Critical     (definitions below)
 Description (required)      [ ........................................................ ]
--- Root cause (optional; can be added later by Quality or Supervisor) --
-> Add root cause now  (details element)
+(T-016: no root-cause fields here; Quality or Supervisor add them on S13 after saving)
 [ Save packaging error ]   Cancel
 ```
 
@@ -999,7 +1000,7 @@ Annotations
 4. Paperwork type is rendered always, with "(required when category is Paperwork)", and with JavaScript is hidden unless Paperwork is selected.
 5. Severity definitions as help text beneath the radios [P, wording is mine; Priya/Quinn to confirm]: Minor = caught and fixed with no effect on the customer; Major = shipment cannot ship until corrected; Critical = could cause a safety, regulatory or serious customer problem (illustrative wording, no compliance claim).
 6. Category "Other" shows a hint: "Quality will review and recategorise it."
-7. The root cause fieldset reuses the F6 fields (S13) so Quality can fill them in one go.
+7. *(T-016)* Root cause is **not** part of this form: contract E-18 does not accept it, because root cause is P-14 (Quality, Supervisor) and Shipping may log errors. After saving, Quality and Supervisor see a `[ Add root cause ]` button on S11, which opens S13.
 
 Accessibility: radio groups with legends; description has a counter hint; errors per field. Responsive: single column.
 
@@ -1048,13 +1049,12 @@ Action (required)               [Select action v]   Relabel - Repack - Reprint p
 Started at (required)           [ 2026-11-25T10:15 ]
 Completed at (leave blank if still in progress)   [                    ]                        (1)
 Minutes                         Calculated when you save (completed minus started).
-Performed by (required)         [Demo Shipper Two v]   Defaults to you.
+Performed by                    Demo Shipper Two (you)   (T-016: always the signed-in user, R-12)
 Re-verified OK                  Set automatically when SH-1042 passes verification again.        (2)
-Note (optional)                 [ ....................... ]
 [ Save rework ]    Cancel
 ```
 
-Annotations: (1) A blank end time saves the event as **In progress**; it shows as "In progress" and is not counted in minute totals (US-029). To finish later the user opens the event from S11 ("Complete rework" uses the same form with the end time required). (2) Read-only text; no checkbox is offered (server-managed, 14.5). Rework cannot be created without an error (the page is only reachable from an error). Validation: end earlier than start is rejected inline.
+Annotations: (1) A blank end time saves the event as **In progress**; it shows as "In progress" and is not counted in minute totals (US-029). To finish later the user opens the event from S11 ("Complete rework" uses the same form with the end time required). (2) Read-only text; no checkbox is offered (server-managed, 14.5). *(T-016)* "Performed by" is read-only text: the server records the signed-in user and refuses an actor field in the request (R-12). The rework event has no note field (contract E-24, no `note` column). Both times are on the business clock ("Started at" and "Completed at" default to the reporting date plus the current time). Rework cannot be created without an error (the page is only reachable from an error). Validation: end earlier than start is rejected inline.
 
 ---
 
@@ -1075,11 +1075,11 @@ Add corrective action for PE-0107
 Action description (required)   [ ....................... ]
 Owner (required)                [Select active user v]
 Due date (required)             [ 2026-12-09 ]   Can't be before the error was detected (25 Nov 2026).
-Status                          ( ) Open  ( ) In Progress  ( ) Closed       (new actions start as Open)
+Status                          Open (new actions always start as Open; change it later by editing the action)   (T-016)
 [ Save corrective action ]   Cancel
 ```
 
-Annotations: The 5 Whys is one textarea (the data model has a single `root_cause_note`); the page pre-fills a five-line template ("Why 1:" through "Why 5:") so the structure is guided without extra fields. Owner lists only active users (US-032). Closed actions become read-only and stamp closed-at. Owner and due date are required in the UI [P]; the data model allows them to be empty (open question 14.7). Past-due, not-closed actions show "Overdue" text.
+Annotations: The 5 Whys is one textarea (the data model has a single `root_cause_note`); the page pre-fills a five-line template ("Why 1:" through "Why 5:") so the structure is guided without extra fields. Owner lists only active users (US-032). Closed actions become read-only and stamp closed-at. Owner and due date are required in the UI, the API and the database (`NOT NULL`; 14.7 answered, *T-016*). Past-due, not-closed actions show "Overdue" text.
 
 Accessibility: textarea labelled "5 Whys note", hint associated; segmented status is a radio group. Responsive: single column.
 
@@ -1227,9 +1227,11 @@ Accessibility: each count input has `aria-label` "Counted quantity, CRC-1120-C, 
 ```
 Count CC-0012 - Class A - scheduled 24 Nov 2026   [Counted]   Entered by: Demo Receiver
 Summary: 18 lines. 16 within tolerance, 2 out of tolerance (88.9 %). 2 adjustments will post.   (1)
-Part       | Loc     | Lot       | ABC | System | Counted | Recount | Final | Variance | Result                  | Adjust reason
-CRC-2041-B | STK-A01 | L2611-004 | A   | 100    | 96      | 96      | 96    | -4       | [!] Out of tolerance    | [Select adjust reason v]
-CRC-3310-A | STK-A04 | L2640-003 | A   | 130    | 130     | -       | 130   | 0        | [check] Within tolerance| -
+Part       | Loc     | Lot       | ABC | System | Counted | Recount | Final | Variance | Result
+CRC-2041-B | STK-A01 | L2611-004 | A   | 100    | 96      | 96      | 96    | -4       | [!] Out of tolerance
+CRC-3310-A | STK-A04 | L2640-003 | A   | 130    | 130     | -       | 130   | 0        | [check] Within tolerance
+Adjust reason (required when any line has a variance)  [Select adjust reason v]   (T-016: one reason per approval)
+Note (optional)  [ ............ ]
 [ Approve count CC-0012 and post 1 adjustment ]    Back to list                                  (2)
 Unavailable (if you entered or recounted any line, R-4): "You entered this count, so another Supervisor must approve it." (3)
    The Approve button stays visible but unavailable (pattern 4.8); server answer 403 APPROVER_SAME_AS_COUNTER.
@@ -1237,8 +1239,8 @@ Unavailable (if you entered or recounted any line, R-4): "You entered this count
 
 Annotations
 1. The summary previews effect in words, including the accuracy this count adds (US-053 formula: lines within tolerance ÷ lines counted).
-2. Approving is explicit and irreversible: one adjustment per line with a variance, using the chosen adjust reason (required for each variance line). Repeating approval posts nothing again (US-044); the page for an Approved count shows no button and the text "Approved by Demo Supervisor on 25 Nov 2026 14:02. Adjustments posted."
-3. **R-4 is adopted** (permissions matrix, test T-15): a Supervisor who entered or recounted any line cannot approve. The page shows who entered the count ("Entered by: Demo Receiver") and, when the viewer is the counter, the Unavailable button with the reason. The contract names the code `APPROVER_ENTERED_COUNT`; the matrix names it `APPROVER_SAME_AS_COUNTER` (open question 14.22).
+2. Approving is explicit and irreversible: one adjustment per line with a variance, all using the **one** adjust reason chosen for this approval (contract E-40 `reason_code_id`, stored as `cycle_count.approval_reason_code_id`, *T-016*). Repeating approval posts nothing again (US-044); the page for an Approved count shows no button and the text "Approved by Demo Supervisor on 25 Nov 2026 14:02. Adjustments posted."
+3. **R-4 is adopted** (permissions matrix, test T-15): a Supervisor who entered or recounted any line cannot approve. The page shows who entered the count ("Entered by: Demo Receiver") and, when the viewer is the counter, the Unavailable button with the reason. The code is `APPROVER_SAME_AS_COUNTER` in the matrix and the contract (14.22 answered, *T-016*).
 4. Non-Supervisors see this page read-only with "Only a Supervisor can approve counts."
 
 Accessibility: tolerance result is text with icon; variance has explicit sign ("-4", "+2") and units; table has caption. Responsive: P3 columns (ABC, Counted, Recount) collapse into the Final cell as small text at 768 px.
@@ -1344,12 +1346,12 @@ Accessibility: targets table has `th scope`; each input labeled with KPI name an
 Reset demo data
 [!] Warning: This deletes ALL records created since the last seed (shipments, errors, receipts, counts)
     and rebuilds the original fictional data. It can't be undone. An audit entry is written first.
-Type RESET DEMO to confirm (required)   [ ____________ ]
+Type RESET DEMO DATA to confirm (required)   [ ____________ ]   (T-016: phrase as in contract E-52)
 [ Reset demo data ] (danger)     Cancel
 ```
 
 Annotations (R-9, security plan PD-3)
-1. The typed phrase is compared on the server; mismatch shows "Type RESET DEMO exactly to confirm." The page also lists consequences in plain words: `All records are rebuilt from the original seed. Demo users and their passwords are recreated. Everyone, including you, is signed out.`
+1. The typed phrase is compared on the server; mismatch shows "Type RESET DEMO DATA exactly to confirm." The page also lists consequences in plain words: `All records are rebuilt from the original seed. Demo users and their passwords are recreated. The audit log is cleared and keeps one entry recording this reset. Everyone, including you, is signed out.` (*T-016, D-5*.)
 2. **Cooldown:** at most one reset per 10 minutes. A second attempt shows (429): `A reset ran less than 10 minutes ago. Wait and try again.` (no countdown clock).
 3. **Success:** all sessions end, so the user lands on `/login` with `The demo data was reset. Sign in again.` (no dashboard redirect).
 4. If the action takes long the page explains "This can take up to a minute. Don't close the page." (static text).
@@ -1366,18 +1368,18 @@ Annotations (R-9, security plan PD-3)
 Lookups:  Customers | Suppliers | Carriers | Parts | Locations | Reason codes       (tab-like links, aria-current)
 Parts                                                            [ Add part ]
 Part number | Revision | Description        | ABC | Unit | Needs C of C | Status    | Actions
-CRC-2041    | B        | Bracket, Machined  | A   | EA   | Yes          | Active    | [ Edit ]  [ Deactivate ]
+CRC-2041-B  | B        | Bracket, Machined  | A   | EA   | Yes          | Active    | [ Edit ]  [ Deactivate ]
 -----------------------------------------------------------------------------------------------
 Add part
-Part number (required)   [ CRC-2041 ]   Format CRC-####. Must be unique.
-Revision (required)      [ B ]
+Part number (required)   [ CRC-2041-B ]   Format CRC-####-<revision>, ending in the revision. Must be unique.   (T-016)
+Revision (required)      [ B ]          Must match the end of the part number.
 Description              [ ... ]       Unit of measure [ EA ]
 ABC class (required)     ( ) A  ( ) B  ( ) C
 Packaging instruction reference [ PI-2041 ]   Needs C of C   [ ] Yes
 [ Save part ]   Cancel
 ```
 
-Annotations: the other lookup types use the same list + form template. Fields are exactly those in docs/08 §8.2: customers (code, name, ship-to city/state), suppliers (code, name), carriers (name, mode Parcel/LTL/Truckload/Pickup), locations (code unique, type Stock/Receiving/Hold/Shipping/FG), reason codes (category late/hold/adjust/scrap, code, label). **Deactivate** replaces delete (US-007, no deletes). Deactivated items are labelled "Inactive" in the list and remain on old records. Duplicate part number or location code: inline "A part with number CRC-2041 already exists. Part numbers must be unique." Reason code category is a required select, not editable after use [P]. Deactivate is a one-click form with a confirm sentence on the next page ("Deactivate CRC-2041? It will disappear from new-record dropdowns but stay on existing records.").
+Annotations: the other lookup types use the same list + form template. Fields are exactly those in docs/08 §8.2: customers (code, name, ship-to city/state), suppliers (code, name), carriers (name, mode Parcel/LTL/Truckload/Pickup), locations (code unique, type Stock/Receiving/Hold/Shipping/FG), reason codes (category late/hold/adjust/scrap, code, label). **Deactivate** replaces delete (US-007, no deletes). Deactivated items are labelled "Inactive" in the list and remain on old records. Duplicate part number or location code: inline "A part with number CRC-2041-B already exists. Part numbers must be unique." Mismatch (T-016): "The part number must end with -B, the revision." Reason code category is a required select, not editable after use [P]. Deactivate is a one-click form with a confirm sentence on the next page ("Deactivate CRC-2041? It will disappear from new-record dropdowns but stay on existing records.").
 
 Accessibility: the tab-like list is `<nav aria-label="Lookup types">` (not ARIA tabs), standard table and form rules. Responsive: P3 columns hidden at 768 px.
 
@@ -1395,7 +1397,7 @@ Time (UTC)           | User           | Action        | Record      | Changes (o
 2026-11-25 10:05:41  | Demo Quality   | access denied | SH-1042     | verify refused: VERIFIER_SAME_AS_PACKER
 ```
 
-Annotations: (1) The page states the time basis, because the business clock is fixed while audit stamps are real. Newest first; no edit or delete controls exist anywhere; passwords never appear. Failed logins show the attempted username only. Accessibility and responsive as S03; the Changes column wraps (no horizontal page scroll) and uses `<code>` for old/new values.
+Annotations: (1) The page states the time basis, because the business clock is fixed while audit stamps are real. Newest first; no edit or delete controls exist anywhere; passwords never appear. Failed logins show the attempted username only when it belongs to an existing user, otherwise `unknown` (security plan §9, *T-016*). Accessibility and responsive as S03; the Changes column wraps (no horizontal page scroll) and uses `<code>` for old/new values.
 
 ---
 
@@ -1454,7 +1456,7 @@ General rules: say what is wrong and how to fix it; use the field's label words;
 | `E-VER-1` | Packer tries to verify (403 `VERIFIER_SAME_AS_PACKER`) | `Verification refused. You packed SH-1042, so you can't verify it. Ask a different Shipping, Quality or Supervisor user to verify.` |
 | `E-VER-2` | Role not allowed (403) | `Your role (Receiving) can't verify shipments. Only Shipping, Quality and Supervisor users can verify.` |
 | `E-VER-3` | Unanswered items (422) | `Answer every item: 3 items have no Pass or Fail selected.` |
-| `E-VER-4` | Fail without note (422) | `Add a note for each item marked Fail so the rework team knows what to fix. (Item 6: Packing slip matches)` |
+| `E-VER-4` | Fail without note (422 `fields.note`) | `Add a note saying what failed so the rework team knows what to fix.` |
 | `E-VER-5` | Mark Verified pressed with a Fail (422) | `You marked item 6 as Fail, so this shipment can't be marked Verified. Use "Fail verification and send to Rework", or change the answer.` |
 | `E-VER-6` | Fail pressed with no Fail (422) | `No item is marked Fail. Mark the item that failed, or choose "Mark Verified" if every item passes.` |
 | `E-VER-7` | Status not Packing (409) | `SH-1042 is Verified, not Packing, so it can't be verified now.` |
@@ -1524,7 +1526,7 @@ General rules: say what is wrong and how to fix it; use the field's label words;
 | Not a whole number | `Counted quantity must be a whole number, 0 or more.` |
 | Recount needed | `Out of tolerance: count this item again and enter the new quantity.` |
 | Submit blocked | `Can't submit yet: 3 lines still need a count and 1 line needs a recount.` |
-| Approve, adjust reason missing | `Select an adjust reason for CRC-2041-B at STK-A01.` |
+| Approve, adjust reason missing | `Select an adjust reason. It is needed because 2 lines have a variance.` |
 | Already approved (409) | `CC-0012 is already approved. No new adjustments were posted.` |
 | Approve by non-Supervisor (403) | `Only a Supervisor can approve counts.` |
 | Approver entered or recounted a line (R-4, 403) | `You entered this count, so another Supervisor must approve it.` |
@@ -1537,8 +1539,9 @@ General rules: say what is wrong and how to fix it; use the field's label words;
 | Hours | `Enter a number of hours greater than 0.` |
 | Invalid reporting date | `Enter a valid reporting date, for example 2026-11-25.` |
 | Not Admin (403) | `Only an Admin can change the reporting date.` |
-| Duplicate | `A part with number CRC-2041 already exists. Part numbers must be unique.` |
-| Reset phrase | `Type RESET DEMO exactly to confirm.` |
+| Duplicate | `A part with number CRC-2041-B already exists. Part numbers must be unique.` |
+| Revision not the part-number suffix (T-016) | `The part number must end with -B, the revision.` |
+| Reset phrase | `Type RESET DEMO DATA exactly to confirm.` |
 
 **Login (S01)**: `Username or password is incorrect.` (one message for every failure, including unknown and deactivated users and an inactive deployed Admin). Rate limited (429): `Too many sign-in attempts. Wait 15 minutes and try again, or use another demo account.` Expired session: `You were signed out because the session expired. Sign in again to continue.` After a demo reset: `The demo data was reset. Sign in again.` Stale CSRF (403): `We couldn't verify that request. Reload the page and try again.`
 
@@ -1624,7 +1627,7 @@ Rules
 |---------|-------------------------|-----------------|
 | All forms | HTML POST + server validation + redirect-after-post | live counters, inline hints |
 | Add/remove shipment lines | submit buttons re-render the page | in-place row add/remove |
-| Verification notes | always visible, labeled "(required if Fail)" | hidden until Fail chosen |
+| Verification note | one field, always visible, labeled "(required if any item fails)" | "(required)" marker once a Fail is chosen |
 | Ship late reason | field always shown, hint states the rule | live "ships N days late" notice and required marker |
 | Menu on tablet | native `<details>` | none |
 | KPI definitions | native `<details>` | none |
@@ -1702,28 +1705,28 @@ Status as of 2026-11-26. **ANSWERED** = settled by the final permissions matrix,
 
 | # | Question | Status | Answer or owner |
 |---|----------|--------|-----------------|
-| 14.1 | Time zone for displayed times | **ANSWERED** (contract §1.1, Q-20) | Display UTC by default; table headers say "(UTC)". The business-clock anchor for live-entered records is **OPEN**: contract Q-A (blocking) for Marcus, Kenji, Dana, Olivia |
+| 14.1 | Time zone for displayed times; business clock | **ANSWERED** (contract §1.1, §1.6; T-016 D-1) | Display UTC; table headers say "(UTC)". Option A: user-entered times (detected, rework started and completed, arrival) default to the reporting date plus the current time; history, verification, ledger and audit times are real UTC |
 | 14.2 | Default period and previous period | **ANSWERED** (contract §1.6) | 30 days inclusive ending on the reporting date (27 Oct to 25 Nov 2026). Previous period is the equal-length block before it (27 Sep to 26 Oct); Kenji confirms in the KPI module |
 | 14.3 | Who sees system quantities in cycle counts | **ANSWERED** (contract §7.1) | Never for an Open count, for any role, absent from the response. On a Counted count only Supervisor (and Admin read-only); on an Approved count every role. S18, S19 match |
 | 14.4 | R-4 approver ≠ counter | **ANSWERED** (matrix R-4, T-15) | Adopted, covers any entered or recounted line. S18, S19 updated. Code name differs, see 14.22 |
 | 14.5 | `reverified_ok`; is "Start packing again" gated | **ANSWERED** (contract E-11, E-16) | `reverified_ok` is server-managed; the gate (error logged, rework completed) applies to Start packing again (`REWORK_GATE_NOT_MET`). 4.10, S05, S06 updated |
 | 14.6 | Hold owning-department values | **ANSWERED provisionally** (contract §2 [A]) | Shipping, Quality, Receiving, Production, Planning, Customer. Priya/Dana to confirm (contract Q-I) |
-| 14.7 | Corrective action owner and due date required | **OPEN** | Priya, Dana (UI requires both; schema allows empty) |
+| 14.7 | Corrective action owner and due date required | **ANSWERED** (schema `NOT NULL`, contract E-27; T-016) | Both required |
 | 14.8 | Lot and tracking formats | **ANSWERED provisionally** (contract Q-I) | Lot: letters, digits, hyphens, 3 to 30, upper-cased; the `L<yy><ww>-<nnn>` pattern is a hint only. Tracking `^[A-Za-z0-9-]{1,40}$`. Messages in 7 updated |
 | 14.9 | F8 for Quality; scrap from Hold | **ANSWERED** (matrix R-7, T-13, T-19) | Receiving 403 for any transfer or scrap out of Hold; Quality limited to transfers and scrap into or out of Hold, not production complete. S16 updated |
 | 14.10 | Demo passwords on the public login page; Viewer kept | **ANSWERED** (matrix section 4, security plan PD-2) | Published demo-only passwords for six accounts (login page or README); `demo.admin` deployed password is a secret and is not published; Viewer kept and recommended. S01 updated |
 | 14.11 | KPI and chart payload shape | **OPEN** | Kenji (contract §9 / Q-P) |
 | 14.12 | C1 axis start at 50 % or 0 % | **OPEN** | Kenji |
 | 14.13 | Severity definitions wording | **OPEN** | Priya, Quinn |
-| 14.14 | Packaging-instruction reference plus revision source fields | **OPEN** | Dana |
+| 14.14 | Packaging-instruction reference plus revision source fields | **ANSWERED** (schema §4.2, contract §5 Line) | `part.packaging_instruction_ref` and `part.revision` |
 | 14.15 | Packer = current packer for all roles | **ANSWERED** (matrix R-1, T-4, T-5; contract E-16) | Yes; reopen sets the caller as the new packer |
-| 14.16 | Ship-date rule | **PARTLY ANSWERED** (contract §1.6) | No future ship date relative to the business date; ship date before order date still **OPEN** (Diego) |
+| 14.16 | Ship-date rule | **ANSWERED** (contract E-12, §14.3) | No ship date after the business date, and none before the order date (both 422). Late reason required when ship date is after the promise date (T-016 D-2) |
 | 14.17 | Chart click-through with tile click-through deferred | **OPEN** | Priya, Kenji (design gives keyboard links under each chart) |
-| 14.18 | Query-string names, filter state on redirects | **OPEN** | Felix, Diego |
-| 14.19 | Page forms: urlencoded POST handlers versus `fetch` JSON (contract Q-O). The no-JavaScript design in section 10 needs urlencoded forms with the hidden CSRF field, including add/remove shipment lines | **OPEN** (important) | Marcus, Felix, Diego |
+| 14.18 | Query-string names, filter state on redirects | **ANSWERED** (contract §1.5, §14.3 14.18) | `page`, `page_size`, `sort`, named filters; unknown parameters are 422. Filter state across PRG redirects is a UI matter (Felix) |
+| 14.19 | Page forms: urlencoded POST vs `fetch` JSON | **ANSWERED** (T-016 D-8; contract §1.12) | Pages use plain `application/x-www-form-urlencoded` POST forms with a hidden `_csrf` field and PRG. `/api/v1/*` stays JSON-only. Both run the same service functions. `add_line` / `remove_line` / `intent` are reserved button names |
 | 14.20 | Supervisor editing notes on a Shipped or Cancelled shipment (contract Q-G): the UI has no such control yet; if kept, S05 gets a notes form for Supervisor only | **OPEN** | Priya |
 | 14.21 | Optional "session ends in 2 minutes, stay signed in" prompt (WCAG 2.2.1 mitigation, 2.6) | **OPEN** | Sasha, Quinn |
-| 14.22 | Error code name for R-4: matrix says `APPROVER_SAME_AS_COUNTER`, contract says `APPROVER_ENTERED_COUNT`; UI copy does not depend on it but tests do | **OPEN** | Diego |
-| 14.23 | Reset keeps or truncates the audit log (contract Q-M); S23 text says records are rebuilt, audit entry written first | **OPEN** | Sasha, Dana |
+| 14.22 | Error code name for R-4 | **ANSWERED** (contract §1.4) | `APPROVER_SAME_AS_COUNTER` |
+| 14.23 | Reset keeps or truncates the audit log | **ANSWERED** (T-016 D-5) | Truncated; one `DEMO_RESET` entry is re-inserted. S23 copy updated |
 | 14.24 | Exact 429 copy and whether to show `Retry-After` for sign-in (design: fixed "15 minutes" text, no clock) | **OPEN** | Sasha, Diego |
 

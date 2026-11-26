@@ -61,7 +61,12 @@ ALTER TABLE inventory_transaction ADD CONSTRAINT inventory_transaction_adjust_ch
   CHECK (txn_type <> 'ADJUST' OR reason_code_id IS NOT NULL);
 ```
 
-**Decision point before 0001 is applied (Q-A, business clock).** The 0001 DDL implements **Option A** (contract section 1.6: real timestamps plus `business_date` columns). If Marcus chooses **Option B** (event timestamps stored as `business_now = reporting_date + real time of day`), delete the four `business_date` columns / `approved_business_date` / `completed_business_date` and the indexes on them from the DDL below **before** applying it; nothing else changes. After 0001 is applied, switching means an expand/contract pair of migrations. See schema.md section 3.
+**Q-A decided (T-016, Marcus, 2026-11-26): Option A stays.** Real timestamps plus `business_date` columns; Option B (event timestamps stored as `business_now`) is rejected because the business time of day is not monotonic across real days and would break `status_history_chain_check` and `completed_at >= started_at` with 500s. See [consistency-review.md](../plan/consistency-review.md) D-1.
+
+**DDL changes made by T-016 (re-run the 0001 tests):**
+1. `rework_event.completed_business_date` is now `GENERATED ALWAYS AS ((completed_at AT TIME ZONE 'UTC')::date) STORED`, so it always follows `completed_at` on the same clock (D-1). The CHECK `(completed_at IS NULL) = (completed_business_date IS NULL)` was removed because the generated column makes it always true. Inserts and updates must **not** supply `completed_business_date`: Postgres rejects an explicit value for a generated column. Checked on PGlite 0.3.16: the expression is accepted as immutable and gives the UTC date whatever the session time zone is.
+2. `cycle_count`: the CHECK `approved_by IS NULL OR approved_by <> submitted_by` was removed. Matrix R-4 forbids approval only by someone who **entered or recounted a line**, and the `cycle_count_approval_guard` trigger already enforces that. A Supervisor who only pressed Submit is allowed by the matrix, so the CHECK would have turned a valid request into a 500 (D-13).
+3. Header comment updated. Nothing else changed.
 
 ## 3. 0001_core_schema — full proposed DDL
 
@@ -69,9 +74,11 @@ ALTER TABLE inventory_transaction ADD CONSTRAINT inventory_transaction_adjust_ch
 -- 0001_core_schema -- V1-CORE schema for the Manufacturing Shipping & Inventory Operations Dashboard.
 -- Fictional data only (Cobalt Ridge Components, Inc.). Forward-only: never edit after it has been applied.
 -- Conventions: snake_case singular table names; bigint identity PKs; timestamptz (UTC); text + CHECK enums.
--- All system and event timestamps store REAL now() (API contract 1.6, Q-23). KPI period anchors that must follow
--- the fixed reporting date are separate DATE columns named *business_date (set by the server from business_today).
--- User-entered times (detected_at, started_at, arrived_at) have no default: the app passes business_now.
+-- Business clock (decision D-1, docs/plan/consistency-review.md): system and event timestamps store REAL now().
+-- KPI period anchors that must follow the fixed reporting date are DATE columns named *business_date (set by the
+-- server from business_today), except rework_event.completed_business_date, which is generated from completed_at.
+-- User-entered business instants (detected_at, rework started_at AND completed_at, arrived_at) have no default:
+-- the app passes business_now unless the user types a value.
 
 -- ---------------------------------------------------------------------------
 -- 1. Helper trigger functions
@@ -436,15 +443,14 @@ CREATE TABLE rework_event (
   action             text        NOT NULL CHECK (action IN ('Relabel','Repack','Reprint paperwork','Replace part','Recount','Other')),
   started_at         timestamptz NOT NULL,
   completed_at       timestamptz,
-  completed_business_date date,
+  completed_business_date date GENERATED ALWAYS AS ((completed_at AT TIME ZONE 'UTC')::date) STORED,  -- D-1: same clock as completed_at
   minutes            integer GENERATED ALWAYS AS (floor(extract(epoch FROM (completed_at - started_at)) / 60)::integer) STORED,
   performed_by       bigint      NOT NULL REFERENCES app_user(id),
   reverified_ok      boolean,
   created_at         timestamptz NOT NULL DEFAULT now(),
   updated_at         timestamptz NOT NULL DEFAULT now(),
   FOREIGN KEY (packaging_error_id, shipment_id) REFERENCES packaging_error (id, shipment_id),
-  CHECK (completed_at IS NULL OR completed_at >= started_at),
-  CHECK ((completed_at IS NULL) = (completed_business_date IS NULL))
+  CHECK (completed_at IS NULL OR completed_at >= started_at)
 );
 CREATE INDEX rework_event_error_idx     ON rework_event (packaging_error_id);
 CREATE INDEX rework_event_shipment_idx  ON rework_event (shipment_id);
@@ -587,7 +593,7 @@ CREATE TABLE cycle_count (
   updated_at     timestamptz NOT NULL DEFAULT now(),
   CHECK ((status IN ('Counted','Approved')) = (submitted_by IS NOT NULL AND submitted_at IS NOT NULL)),
   CHECK ((status = 'Approved') = (approved_by IS NOT NULL AND approved_at IS NOT NULL AND approved_business_date IS NOT NULL)),
-  CHECK (approved_by IS NULL OR approved_by <> submitted_by),
+  -- (no approved_by <> submitted_by CHECK: matrix R-4 covers counters and recounters only, D-13)
   CHECK (approved_at IS NULL OR submitted_at IS NULL OR approved_at >= submitted_at)
 );
 ALTER SEQUENCE cycle_count_no_seq OWNED BY cycle_count.count_no;
@@ -844,8 +850,8 @@ Not tested here (needs Netlify's hosted Postgres or concurrency): the advisory-l
 
 ## 6. Risks and notes
 
-1. **Option A vs B (Q-A)** must be decided before 0001 is applied anywhere shared (a preview branch counts).
-2. **The non-negative trigger and the seed.** The seed disables `inventory_transaction_nonnegative` and `inventory_transaction_transfer_balanced` inside its transaction (they take advisory locks per ledger key; ~750 rows would hold several hundred advisory locks) and verifies the same invariants with SQL at the end; see seed-plan section 9. If the lock budget is not an issue on Netlify Database, the triggers can stay on.
+1. **Option A vs B (Q-A)**: decided, Option A (T-016, D-1). The 0001 text is final apart from review fixes made before it is first applied anywhere shared (a preview branch counts).
+2. **The non-negative trigger and the seed (decided, D-10).** The seed does **not** disable `inventory_transaction_nonnegative` or `inventory_transaction_transfer_balanced`. `ALTER TABLE ... DISABLE TRIGGER` is DDL inside application code (the demo reset runs in a Netlify Function), which item 3 and security plan section 8.2 / AR-4 rule out. The lock budget is not a problem: about 750 ledger rows touch a few hundred distinct (part, location, lot) keys, well under the default lock table (about 64 x max_connections slots). Measure the commit time on Netlify as part of SQ-2.
 3. **Owner-level connection.** Netlify injects one owner credential, so the triggers are the only protection against an application bug that tries to UPDATE the ledger (security plan AR-4). Keep DDL out of app code.
 4. **The first production deploy creates an empty database** (migrations only). Demo users and data come from the seed; how the very first seed reaches production is an open question for Theo/Sasha/Diego (seed-plan section 12).
 5. **History trigger and clocks.** `status_history_chain_check` requires `changed_at` to be non-decreasing per shipment. All seed timestamps are before `2026-11-25T00:00:00Z`, so any real clock at or after that date is fine. A development machine with its clock set before that date would see inserts rejected.
