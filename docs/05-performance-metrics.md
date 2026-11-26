@@ -2,6 +2,8 @@
 
 **Research date:** 2026-11-25 · Tags: **[R]** researched · **[A]** assumption · **[P]** proposed
 
+> **v1 implementation spec:** [kpi/kpi-spec.md](kpi/kpi-spec.md) (user decisions UD-7…UD-10, 2026-11-26)
+
 > **Rule for builders:** use these exact formulas. If a definition changes, change it here first.
 
 ## 5.1 Why definitions must be fixed in advance

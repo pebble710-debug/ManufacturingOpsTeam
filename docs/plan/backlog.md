@@ -1,6 +1,6 @@
 # Version 1 Product Backlog
 
-**Task:** T-001 (first draft), T-004 (revised for the user decisions of 2026-11-25) · **Owner:** Priya (product-manager) · **Date:** 2026-11-25 · **Status:** Revised: V1-CORE cut applied, pending Orchestrator review
+**Task:** T-001 (first draft), T-004 (revised for the user decisions of 2026-11-25) · **Owner:** Priya (product-manager) · **Date:** 2026-11-25 · **Status:** Revised 2026-11-26 (T-021): user decisions UD-1 to UD-10 applied, Resources page and Supervisor correction stories added (US-085, US-086); V1-CORE now 42 cards
 **Release labels:** every story carries `Release: V1-CORE` (build in v1), `Release: V1-CORE (merged into US-xxx)` (its acceptance criteria are built as part of the named host story; no separate card) or `Release: DEFERRED (v1.1)` (kept here, not built until the core is accepted). See section 3.1 and the V1-CORE rationale in section 3.3.
 **Source of truth:** [project-scope.md](../project-scope.md) (v1 contract). All data, names and examples are **fictional** (Cobalt Ridge Components, Inc., Riverton plant).
 
@@ -28,6 +28,29 @@ This backlog turns scope sections 3 (in scope) and 5 (acceptance criteria) into 
 **ADR-001 is conditionally accepted** (user decision, 2026-11-25): Astro + TypeScript + Chart.js + Netlify Database (Postgres) on Netlify, conditional on a technical proof of concept (new story US-083, build step 0). It supersedes the Flask/SQLite proposal in docs/07 section 7.1. Stories stay **technology-neutral** on purpose ("data store", "ledger", "chart", "server-side check"); technical detail lives in ADR-001. Gate G0 is now: ADR-001 conditionally accepted **and** US-083 (proof of concept) passed. The scope conflict in Q-01 is resolved (project-scope.md section 3.7, section 4).
 
 **Constraints from the user (2026-11-25), apply to every story:** Netlify **Free plan only** (no upgrades, paid add-ons or automatic credit purchases without explicit user approval); develop and test locally as much as possible; the repository is **public** (fictional data only, no secrets); the demo uses a **fixed reporting date** (2026-11-25) labelled on the dashboard.
+
+### 1.1 User decisions of 2026-11-26 (UD-1 to UD-10), binding on every story
+
+Source: [build-plan.md](build-plan.md). Where an older acceptance criterion below disagrees with this table, **this table wins** (affected stories carry a note; changed IDs are listed in the revision log, section 10).
+
+| # | Decision | Where applied |
+|---|----------|---------------|
+| UD-1 | A **late reason is required whenever ship date is after promise date, regardless of the tolerance setting**. The on-time tolerance (days) affects KPI-1 only. | US-021 (absorbs US-022), US-008, US-047 |
+| UD-2 | A user may **not approve a cycle count they performed (entered or recounted any line) or submitted**. | US-044, permissions-matrix R-4, T-15, T-26 |
+| UD-3 | **Shipped and Cancelled shipments are locked** (409). Corrections only through an audited **Supervisor correction** with a reason, old to new in the audit. Notes are locked too. | US-015 (merged in US-014), US-086 (new), P-28, R-14 |
+| UD-4 | **Reopen** (Rework to Packing) and **contain** (packaging error) are Supervisor and Quality only, server-enforced. | US-016, US-032, P-26, P-27, R-15 |
+| UD-5 | Packaging-error **severity** is **Low, Medium, High, Critical** (definitions below). | US-027, US-012, US-065 (R3) |
+| UD-6 | **Delivered** status removed from v1. | US-012, US-015, US-016, US-017, US-025, US-026 (removed), US-033, US-047 |
+| UD-7 to UD-10 | KPI rules (first-count accuracy, ship-date basis for the error rate, customer-found errors count against first-pass yield, one P90 method). | Kenji's KPI spec and docs/05; US-046 to US-053 follow it |
+
+**Severity definitions (UD-5, [P], shown as help text on the error form):**
+
+| Severity | Meaning | Example |
+|----------|---------|---------|
+| Low | Cosmetic or documentation slip caught internally; no effect on fit, function or traceability; fixed in minutes. | Label smudged but readable |
+| Medium | Would have caused customer inconvenience or rework at the customer; caught internally or minor customer-found. | Wrong quantity of a low-value part |
+| High | Wrong or non-conforming shipment, wrong revision or missing required document; customer-found errors of this kind. | Packing slip lists revision B, parts are revision C (SH-1042) |
+| Critical | Affects safety, traceability or a customer's quality claim; needs immediate containment and a corrective action. | Wrong lot shipped on a part that requires a C of C |
 
 ### Roles used (07 section 7.2)
 
@@ -95,7 +118,7 @@ Core dependencies below point **only to V1-CORE stories** (a merged story is bui
 | US-023 | Document checklist flags | E1 | V1-CORE (merged into US-014) | | B2 |
 | US-024 | Shipment list, search, filters and detail page (absorbs US-018) | E1 | V1-CORE | US-016 | B2 |
 | US-025 | Overdue and due-soon views | E1 | DEFERRED (v1.1) | | |
-| US-026 | Record delivered date (optional) | E1 | DEFERRED (v1.1) | | |
+| US-026 | Record delivered date (optional) | E1 | REMOVED from v1 (UD-6; v2 with carrier integration) | | |
 | US-027 | Log a packaging error (F4; absorbs US-033 customer-found errors) | E2 | V1-CORE | US-016, US-007, US-021 | B3 |
 | US-028 | Failed verification opens a pre-filled error | E2 | DEFERRED (v1.1) | | |
 | US-029 | Log rework (F5) | E2 | V1-CORE | US-027 | B3 |
@@ -135,6 +158,8 @@ Core dependencies below point **only to V1-CORE stories** (a merged story is bui
 | US-063 | Click-through from KPI tiles to records | E4 | DEFERRED (v1.1) | | |
 | US-064 | KPI-8 Dock-to-stock time (optional) | E4 | DEFERRED (v1.1) | | |
 | US-084 | Dashboard customer and carrier filters (new; split from US-055) | E4 | DEFERRED (v1.1) | | |
+| US-085 | Resources page (new, T-021) | E6 | V1-CORE | US-083 (shell and navigation) | B1 |
+| US-086 | Supervisor correction of a Shipped or Cancelled shipment (new, T-021; UD-3) | E1 | V1-CORE | US-014, US-016, US-005 | B2 |
 | US-065 | Report framework, CSV export, R1 Shipment Log, R3 Error and Rework Log, R4 On-Hand (absorbs US-066, US-068, US-069) | E5 | V1-CORE | US-003, US-046, US-021, US-029, US-032, US-037 | B6 |
 | US-066 | R1 Shipment Log | E5 | V1-CORE (merged into US-065) | | B6 |
 | US-067 | R2 Late Shipment Report | E5 | DEFERRED (v1.1) | | |
@@ -407,6 +432,7 @@ As a **Supervisor**, I want to manage customers, suppliers, carriers, parts, loc
 > - Given the fixed mode, when any user opens the dashboard or a report on any real calendar date, then the default period is the 30 days ending on the reporting date, overdue and "today" logic use the reporting date, and the page shows a text label such as "Reporting date: 25 Nov 2026 (fixed demo date)".
 > - Given an Admin, when they switch to live mode, then the real date is used and the label says "Live date"; a non-Admin attempt gets 403; an invalid date is rejected inline; every change is audited.
 > - Given fixed mode and a record created live (for example a shipment shipped during the demo), when the dashboard is reloaded, then the record falls inside the default period (business-clock rule, scope section 3.4; design confirmation Marcus/Kenji).
+> - **UD-1 (2026-11-26):** the on-time tolerance setting (days, default 0) changes only the KPI-1 calculation. Given the tolerance is set above 0, when a shipment ships after its promise date, then the ship form still requires a late reason (US-021).
 
 As a **Supervisor**, I want to change KPI targets and cycle-count tolerances by ABC class so that the dashboard compares against our current goals.
 
@@ -466,7 +492,7 @@ As a **developer or QA tester**, I want one command that rebuilds the demo data 
   - Given an empty or existing data store, when the documented single seed command is run, then the store is reset and rebuilt without manual steps and the command exits successfully.
   - Given the command run twice, when QA compares counts and a checksum of key tables (and a sample of ten named records), then the results are identical (fixed random seed).
   - Given the seeded reference data, when counted, then there are 1 company (Cobalt Ridge Components, Inc., Riverton plant), 6 customers, 4 suppliers, 4 carriers, about 25 parts (ABC mix about 20/30/50 %, format CRC-####-<rev>), about 10 locations (including RCV-01, HOLD-01, FG-01, SHIP-01), and the late/hold/adjust/scrap reason codes.
-  - Given the seeded users, when counted, then there is one demo user per role (6) with obviously fake names (for example demo.shipper / Demo Shipper), example.com emails, and demo-only passwords documented in the README.
+  - Given the seeded users, when counted, then there are **seven** demo users (2 Shipping, 1 Receiving, 1 Quality, 1 Supervisor, 1 Admin, 1 Viewer; changed 2026-11-26) with obviously fake names (for example demo.shipper1 / Demo Shipper One), example.com emails, and demo-only passwords documented in the README.
   - Given all seeded text, when reviewed against fictional-data-guardrails, then no real company, person, carrier format or part number is used and tracking numbers use the fictional prefixes SLP, HFL or TAX.
 - **Out of scope:** Importing real data; connecting to any external system.
 
@@ -481,7 +507,7 @@ As a **presenter**, I want about 300 fictional shipments over 6 months with a pe
 - **Priority:** Must · **Size:** L · **Batch:** B6
 - **Depends on:** US-011, US-016, US-021, US-027, US-029, US-031, US-032, US-022
 - **Acceptance criteria (Given/When/Then):**
-  - Given a freshly seeded store, when QA counts shipments, then there are about 300 (270 to 330) spread over 6 months ending on the seed anchor date, in a realistic mix of statuses (most Shipped, a few Planned/Ready/Packing/Verified/On Hold/Rework/Cancelled, a small number Delivered).
+  - Given a freshly seeded store, when QA counts shipments, then there are about 300 (270 to 330) spread over 6 months ending on the seed anchor date, in a realistic mix of statuses (most Shipped, a few Planned/Ready/Packing/Verified/On Hold/Rework/Cancelled; **no Delivered status exists, UD-6**), and every seeded packaging error has a severity of Low, Medium, High or Critical (UD-5).
   - Given the seed, when volume per day is compared, then a 3 to 4 week peak period has about twice the daily volume of other weeks and higher error and late rates than outside the peak.
   - Given the seed, when counted, then packaging errors are 6 to 8 % of shipments overall, labels and paperwork are the two largest categories, and customer-found (after ship) errors exist.
   - Given the seed, when counted, then there is about one rework event per error caught before ship, each 10 to 90 minutes, and 8 to 12 % of shipments are late spread across several late reason codes.
@@ -544,13 +570,13 @@ As a **Shipping associate**, I want to correct header and line details while the
 - **Acceptance criteria (Given/When/Then):**
   - Given a shipment in Planned, Ready to Pack, Packing, Verified, On Hold or Rework, when a Shipping user edits header or lines and saves valid data, then the changes are saved and an audit entry records old to new values.
   - Given a shipment in Verified, when header or line quantity, part, revision or lot is changed, then the shipment returns to Rework (it must be verified again) and the status history shows why.
-  - Given a shipment in Shipped, Delivered or Cancelled, when anyone edits header or lines, then the form is read-only and a direct request is rejected (409 or 403) with a message; only notes remain editable by Supervisor.
+  - **(Changed by UD-3 and UD-6)** Given a shipment in Shipped or Cancelled, when anyone edits header, lines, document flags or notes through the form or a direct request, then the form is read-only and the server rejects it with **409** (shipment locked) and a message; nothing changes. The only way to change such a shipment is the Supervisor correction in US-086. (There is no Delivered status.)
   - Given the same validation rules as creation, when an edit violates them, then it is rejected inline.
 - **Out of scope:** Anything listed in scope section 4 (deferred to v2).
 
 #### US-016 Status lifecycle, history, hold, release and cancel
 
-> **Release: V1-CORE** · Core depends on: US-014 · Absorbs US-017. Role rules per permissions-matrix.md: hold by Shipping, Quality or Supervisor; release by Quality or Supervisor (R-6); cancel by Supervisor, and by Shipping only while Planned or Ready to Pack (R-5). The Delivered transition is not built in the core (US-026 deferred); ignore it in the transitions below.
+> **Release: V1-CORE** · Core depends on: US-014 · Absorbs US-017. Role rules per permissions-matrix.md: hold by Shipping, Quality or Supervisor; release by Quality or Supervisor (R-6); cancel by Supervisor, and by Shipping only while Planned or Ready to Pack (R-5). **There is no Delivered status in v1 (UD-6; US-026 removed)**: ignore "Shipped to Delivered" in the transitions below. **Reopen (Rework to Packing) is allowed for Supervisor and Quality only (UD-4, P-26)**; Shipping re-packs after the reopen.
 
 As a **Shipping associate**, I want status changes only through defined actions, each recorded in a history so that the shipment's progress and timings are trustworthy.
 
@@ -565,6 +591,8 @@ As a **Shipping associate**, I want status changes only through defined actions,
   - Given a shipment that moves Planned to Ready to Pack, when the history is read, then the first Ready to Pack timestamp is stored for later cycle-time use (never overwritten by later re-entry).
   - Given the status field on screens, when rendered, then it is not editable as a free dropdown anywhere.
   - Given a Viewer, when they attempt any transition, then the response is 403.
+  - **(New, UD-4)** Given a shipment in Rework, when a Supervisor or Quality user chooses Reopen, then it moves to Packing and history records the user; when a Shipping, Receiving, Admin or Viewer user attempts Reopen (UI or direct request), then the response is 403 and the status is unchanged.
+  - **(New, UD-4)** Given a reopened shipment, when it is re-packed, then the user who performs the re-pack is recorded as the current packer (so the verifier rule applies to that user; matrix scenario T-5).
 - **Out of scope:** Automatic status updates from carriers (scope §4).
 
 #### US-017 Hold, release and cancel with reason
@@ -581,7 +609,7 @@ As a **Quality technician**, I want to put a shipment On Hold with a reason and 
   - Given a shipment before Shipped, when a Quality, Supervisor or Shipping user puts it On Hold, then a hold reason (from the hold reason codes) is required and the owning department is recorded; without a reason the action is rejected.
   - Given a shipment On Hold, when a Quality or Supervisor user releases it, then it returns to the status it had before the hold and both actions appear in history.
   - Given a shipment before Shipped, when a Shipping or Supervisor user cancels it with a note, then status is Cancelled, it is read-only, and it is excluded from every KPI and chart count.
-  - Given a Shipped or Delivered shipment, when cancel or hold is attempted, then it is rejected.
+  - Given a Shipped or Cancelled shipment, when cancel or hold is attempted, then it is rejected (409).
 - **Out of scope:** Full MRB disposition workflow (scope §4).
 
 #### US-018 Shipment detail page
@@ -638,7 +666,7 @@ As a **Supervisor**, I want the system to refuse verification by the same person
 
 #### US-021 Ship a verified shipment (F3)
 
-> **Release: V1-CORE** · Core depends on: US-019, US-020, US-007 · Absorbs US-022 (late reason). Ship: Shipping and Supervisor (P-08); Admin gets 403. "Today" and "future ship date" use the reporting date in fixed mode.
+> **Release: V1-CORE** · Core depends on: US-019, US-020, US-007 · Absorbs US-022 (late reason). Ship: Shipping and Supervisor (P-08); Admin gets 403. "Today" and "future ship date" use the reporting date in fixed mode. **UD-1:** the late-reason rule below applies whenever ship date is after promise date, whatever the tolerance setting.
 
 As a **Shipping associate**, I want to record ship date, carrier, tracking, packages, weight and shipped quantities so that the shipment is completed and measurable.
 
@@ -667,7 +695,7 @@ As a **Shipping associate**, I want to be forced to state why a shipment is late
 - **Priority:** Must · **Size:** S · **Batch:** B2
 - **Depends on:** US-021, US-007
 - **Acceptance criteria (Given/When/Then):**
-  - Given ship date later than promise date (with the configured tolerance of 0 days), when the Ship form is saved with no late reason, then it is rejected inline.
+  - **(Changed by UD-1)** Given ship date later than promise date, **regardless of the on-time tolerance setting** (for example tolerance 0 days or 2 days), when the Ship form is saved with no late reason, then it is rejected inline (and a direct request is rejected with 400/422); the tolerance affects only KPI-1.
   - Given ship date on or before promise date, when saved, then no late reason is required and the field is hidden or optional.
   - Given a late reason chosen, when saved, then it is stored from the late reason-code list and appears on the shipment, R2 and chart C4.
   - Given a ship date later than today, when saved, then it is rejected (no future ship dates).
@@ -718,7 +746,7 @@ As a **Shipping associate**, I want a view of shipments overdue or due in the ne
 - **Priority:** Must · **Size:** S · **Batch:** B2
 - **Depends on:** US-024
 - **Acceptance criteria (Given/When/Then):**
-  - Given today's date, when the view is opened, then Overdue lists shipments with promise date before today that are not Shipped, Delivered or Cancelled.
+  - Given today's date, when the view is opened, then Overdue lists shipments with promise date before today that are not Shipped or Cancelled.
   - Given today's date, when the view is opened, then Due soon lists shipments with promise date from today to today + 3 days still in Planned (not yet Ready to Pack).
   - Given a shipment On Hold, when it is overdue, then it appears in Overdue and shows the hold reason.
   - Given a click on a row, when activated, then the shipment detail page opens.
@@ -726,7 +754,7 @@ As a **Shipping associate**, I want a view of shipments overdue or due in the ne
 
 #### US-026 Record delivered date (optional)
 
-> **Release: DEFERRED (v1.1)** · Reason: optional; no KPI uses it.
+> **Release: REMOVED from v1 (user decision UD-6, 2026-11-26)** · The Delivered status and delivered date are not built; they move to v2 with carrier integration (project-scope.md section 4). The text below is kept for traceability only and must not be built or tested.
 
 As a **Shipping associate**, I want to optionally record a delivered date on a shipped shipment so that delivery can be noted when I know it.
 
@@ -755,7 +783,7 @@ As a **Shipping associate**, I want to log a packaging error with category, seve
 - **Priority:** Must · **Size:** M · **Batch:** B3
 - **Depends on:** US-016, US-007
 - **Acceptance criteria (Given/When/Then):**
-  - Given a shipment, when a Shipping, Quality or Supervisor user opens Log Packaging Error, then they must choose category (Wrong part, Wrong quantity, Incorrect label, Paperwork, Packaging method, Damage, Traceability, Other), severity (Minor, Major, Critical), detected by (Packer, Verifier, Quality, Customer), detected stage (Before ship, After ship) and enter a description.
+  - Given a shipment, when a Shipping, Quality or Supervisor user opens Log Packaging Error, then they must choose category (Wrong part, Wrong quantity, Incorrect label, Paperwork, Packaging method, Damage, Traceability, Other), severity (**Low, Medium, High, Critical, UD-5**; definitions as help text, backlog section 1.1), detected by (Packer, Verifier, Quality, Customer), detected stage (Before ship, After ship) and enter a description.
   - Given category Paperwork, when saving, then a paperwork sub-type (Packing slip, BOL, C of C, Customer-specific form, Commercial invoice) is required.
   - Given a valid form, when saved, then an error number PE-#### is assigned, status Open is set, and the error appears on the shipment detail page.
   - Given a required field missing or an unlisted category value sent directly to the server, when saved, then it is rejected.
@@ -835,7 +863,7 @@ As a **Quality technician**, I want to record a root-cause category and a 5 Whys
 
 #### US-032 Root cause, corrective action (F6), error list and close-out
 
-> **Release: V1-CORE** · Core depends on: US-027, US-029 · Absorbs US-031 (root cause, 5 Whys) and US-034 (error list, close-out). Quality and Supervisor (P-14).
+> **Release: V1-CORE** · Core depends on: US-027, US-029 · Absorbs US-031 (root cause, 5 Whys) and US-034 (error list, close-out). Quality and Supervisor (P-14). **UD-4:** containing an error (Open to Contained, P-27) is Supervisor and Quality only; Given a Shipping, Receiving, Admin or Viewer user, when they attempt to contain an error by UI or direct request, then the response is 403 and the status is unchanged; Given a Supervisor or Quality user, when they contain an error, then status becomes Contained, history and audit record the user and time.
 
 As a **Quality technician**, I want to create a simple corrective action with owner, due date and status so that fixes are followed through.
 
@@ -862,7 +890,7 @@ As a **Quality technician**, I want to record an error found by the customer aft
 - **Priority:** Must · **Size:** S · **Batch:** B3
 - **Depends on:** US-027, US-021
 - **Acceptance criteria (Given/When/Then):**
-  - Given a Shipped or Delivered shipment, when a Quality or Supervisor user logs an error with detected stage After ship and detected by Customer, then it is saved without changing the shipment status.
+  - Given a Shipped shipment, when a Quality or Supervisor user logs an error with detected stage After ship and detected by Customer, then it is saved without changing the shipment status.
   - Given a Before ship error on a Shipped shipment, when saved, then it is rejected (stage must be After ship).
   - Given an After ship error, when KPI-3 is computed, then it is counted as a customer escape in the internal vs escape split.
 - **Out of scope:** Anything listed in scope section 4 (deferred to v2).
@@ -1047,7 +1075,7 @@ As a **Receiving/inventory clerk**, I want to enter physical counts without seei
 
 #### US-044 Approve a count and post adjustments
 
-> **Release: V1-CORE** · Core depends on: US-043, US-037 (no longer depends on the deferred US-040; the adjustment posting is built here). Supervisor only (P-19, R-3); proposed R-4: approver is not the person who entered the count (pending Sasha).
+> **Release: V1-CORE** · Core depends on: US-043, US-037 (no longer depends on the deferred US-040; the adjustment posting is built here). Supervisor only (P-19, R-3). **R-4 as widened by UD-2 (2026-11-26): the approver may not be a person who entered or recounted any line of the count, or who submitted it.**
 
 As a **Supervisor**, I want to review a counted cycle count and approve it so adjustments post so that stock matches reality with approval.
 
@@ -1062,6 +1090,9 @@ As a **Supervisor**, I want to review a counted cycle count and approve it so ad
   - Given the approval, when KPI-7 is computed after it, then the count's lines are included in Inventory Accuracy % (approved-at in the period).
   - Given any non-Supervisor, when they attempt to approve, then the response is 403.
   - Given an already Approved count, when approval is repeated, then no second adjustment is posted.
+  - **(New, UD-2)** Given a Supervisor who entered or recounted any line of a count, when they attempt to approve it (UI or direct request), then the response is 403 (`APPROVER_SAME_AS_COUNTER`), no adjustment is posted and the status stays Counted.
+  - **(New, UD-2)** Given a Supervisor who submitted a count, when they attempt to approve it, then the response is 403 (`APPROVER_SAME_AS_SUBMITTER`), no adjustment is posted and the status stays Counted.
+  - **(New, UD-2)** Given the seeded count CC-0011 entered and submitted by `demo.receiver`, when `demo.supervisor` approves it, then it is accepted; the counter and submitter come from the session (never the request body).
 - **Out of scope:** Anything listed in scope section 4 (deferred to v2).
 
 #### US-045 Lot trace report (R7)
@@ -1121,7 +1152,8 @@ As a **Supervisor**, I want on-time shipment % by ship date against promise date
   - Given a boundary case (ship date equal to promise date), when computed, then it counts as on time.
   - Given an empty period, when computed, then the result is null; given all on time, 100 %; given none on time, 0 %.
   - Given a cancelled shipment in the period, when computed, then it is not counted.
-  - Given a shipment shipped but not yet Delivered, when computed, then it still counts (period by ship date).
+  - Given a shipment in Shipped status (there is no Delivered status in v1, UD-6), when computed, then it counts in the period of its ship date.
+  - **(UD-1)** Given an on-time tolerance above 0 days, when KPI-1 is computed, then a shipment shipped within the tolerance counts as on time, but its late reason was still required at ship time.
 - **Out of scope:** Anything listed in scope section 4 (deferred to v2).
 
 #### US-048 KPI-2 OTIF %
@@ -1625,7 +1657,7 @@ As a **Admin**, I want dependencies pinned and checked for known vulnerabilities
 
 #### US-077 Accessibility: text status, contrast, keyboard
 
-> **Release: V1-CORE** · Core depends on: US-014, US-054, US-056, US-024 · Absorbs US-078 (laptop and tablet). Applies to the three core charts (text/table alternative each) and the fixed reporting date label.
+> **Release: V1-CORE** · Core depends on: US-014, US-054, US-056, US-024 · Absorbs US-078 (**responsive desktop, tablet and mobile**, 2026-11-26). Applies to the Resources page (US-085), the three core charts (text/table alternative each) and the fixed reporting date label.
 
 As a **Viewer**, I want status, charts and forms usable without colour or a mouse so that everyone can use the app.
 
@@ -1642,19 +1674,21 @@ As a **Viewer**, I want status, charts and forms usable without colour or a mous
 
 #### US-078 Usable on laptop and tablet
 
-> **Release: V1-CORE (merged into US-077)** · Reports R2, R5, R6, R8 in the page list below are deferred; test the core pages only.
+> **Release: V1-CORE (merged into US-077)** · Reports R2, R5, R6, R8 in the page list below are deferred; test the core pages only. **Widened 2026-11-26:** layouts must work on desktop, tablet and **mobile** (user requirement); the phone layout is no longer out of scope. A native app and offline mode remain v2.
 
-As a **Shipping associate**, I want pages to work on a laptop and a tablet so that I can use the app on the shop floor.
+As a **Shipping associate**, I want pages to work on a desktop, a tablet and a phone so that I can use the app on the shop floor and at my desk.
 
 - **Scope ref:** project-scope.md section 3 (item 3.4c); **Scope section 5 criteria:** 9
 - **Docs:** 07 §7.3 item 4
 - **Priority:** Must · **Size:** M · **Batch:** B7
 - **Depends on:** US-054, US-014
 - **Acceptance criteria (Given/When/Then):**
-  - Given widths 1280 px (laptop) and 768 px (tablet portrait), when each main page is opened (dashboard, shipment list, shipment form, Pack & Verify, Ship, error form, receipt form, cycle count entry, reports), then there is no horizontal page scroll and all controls are usable.
-  - Given touch input on the tablet, when using buttons and checkboxes, then touch targets are at least 44 x 44 CSS px.
-  - Given the dashboard on tablet, when viewed, then tiles wrap and charts resize without overlap.
-- **Out of scope:** Phone layout, native app, offline mode (scope §4).
+  - **(Changed 2026-11-26)** Given widths **1440 px (desktop), 1280 px (laptop), 768 px (tablet portrait) and 390 px (mobile portrait)**, when each main page is opened (login, dashboard, shipment list, shipment form, Pack & Verify, Ship, error form, receipt form, cycle count entry, reports, Resources), then there is no horizontal page scroll (data tables may scroll inside their own container, with a visible label) and all controls are usable.
+  - Given touch input on the tablet and mobile, when using buttons and checkboxes, then touch targets are at least 44 x 44 CSS px.
+  - Given the dashboard on tablet and mobile, when viewed, then tiles wrap to one or two columns and charts resize without overlap, each chart keeps its text or table alternative.
+  - Given the navigation at 390 px, when opened by touch or keyboard, then every item is reachable (collapsed menu with a labelled toggle) and the DEMO banner stays visible as text.
+  - Given the mobile width, when QA runs the automated accessibility scan at 390 px, then there are no critical or serious findings and text zoomed to 200 % does not lose content.
+- **Out of scope:** Native app, offline mode (scope §4).
 
 #### US-079 KPI unit tests with hand-calculated fixtures
 
@@ -1753,6 +1787,46 @@ As a **Supervisor**, I want to filter the dashboard by customer and carrier so t
   - Given the inventory accuracy tile, when a customer or carrier filter is active, then the tile ignores the filter and says so in text (Q-16).
 - **Out of scope:** Anything beyond the date, customer and carrier filters.
 
+### New stories added in T-021 (user decisions of 2026-11-26)
+
+#### US-085 Resources page
+
+> **Release: V1-CORE** · Core depends on: US-083 (application shell and navigation) · Epic E6 · Batch B1 · Priority: Must · Size: S · Scope ref: project-scope.md section 3.5 (Resources page), section 5 criterion 13 · Content: [resources.md](resources.md) (Felix builds exactly that list)
+
+As a **Viewer** (any signed-in role), I want a Resources page with links to the official documentation, the source repository and the project research documents so that I can learn how the prototype was built and check its sources.
+
+- **Docs:** resources.md; permissions-matrix P-29
+- **Acceptance criteria (Given/When/Then):**
+  - Given any signed-in user on any page, when they look at the header navigation or the footer, then a link labelled "Resources" is present and opens `/resources`.
+  - Given the Resources page, when it is opened, then it lists every link in resources.md sections 1, 2, 4 and 5 with the title as link text and the one-line description shown as text; the technologies include Astro, Netlify (Functions and Database), PostgreSQL, Chart.js, Zod, Vitest and Playwright; the standards include OWASP Top 10, OWASP ASVS and WCAG 2.2.
+  - Given the GitHub repository link, when followed, then it opens https://github.com/pebble710-debug/ManufacturingOpsTeam; given each project document link (docs/01 to 08, sources, ADR-001, scope), when followed, then it opens that file on the `main` branch on GitHub.
+  - Given an external link, when rendered, then it is identifiable as external in text (not colour alone), opens in a new tab and carries `rel="noopener noreferrer"`.
+  - Given QA's link check, when every URL on the page is requested once, then each returns a successful response (a failing URL is a defect fixed in resources.md first).
+  - Given the page, when scanned with the accessibility tool and viewed at 1440, 768 and 390 px, then there are no critical or serious findings and no horizontal page scroll (US-077).
+  - Given an unauthenticated visitor, when they request `/resources`, then they are sent to login (matrix T-27); given any signed-in role, then the page loads (200) and the DEMO banner is shown.
+  - Given the page source, when inspected, then it contains no third-party scripts, fonts or embedded content, makes no database call and contains no secret.
+- **Out of scope:** Search, user-editable links, embedded documentation, tutorials.
+
+#### US-086 Supervisor correction of a Shipped or Cancelled shipment
+
+> **Release: V1-CORE** · Core depends on: US-014, US-016, US-005 · Epic E1 · Batch B2 · Priority: Must · Size: S · Scope ref: project-scope.md section 3.1 (locked after shipping), section 5 criterion 12 · User decision UD-3 · Matrix P-28, R-14, T-25
+
+As a **Supervisor**, I want to correct a data-entry mistake on a Shipped or Cancelled shipment through a recorded correction with a reason so that the record is right without anyone being able to change shipped history silently.
+
+- **Docs:** 07 §7.4 (audit); permissions-matrix R-14; 05 (KPI-1 uses promise and ship dates)
+- **Acceptance criteria (Given/When/Then):**
+  - Given a Shipped or Cancelled shipment, when a Shipping, Quality, Receiving, Admin or Viewer user attempts a correction (UI or direct request), then the response is 403 and nothing changes.
+  - Given a Shipped or Cancelled shipment, when anyone attempts an ordinary edit (header, lines, document flags, notes), then the response is 409 and nothing changes (US-014/US-015).
+  - Given a Supervisor on a Shipped or Cancelled shipment, when they open Correct, then they see the current values and a mandatory reason field; the screen states that status, status history, the inventory ledger and verification records are not changed by a correction.
+  - Given a correction with no reason (or one shorter than 10 characters, [P] limit), when submitted, then it is rejected inline (400/422) and nothing changes.
+  - Given a valid correction of an allowed field (customer PO, requested or promise date, carrier, tracking number, packages, weight, document flags, notes, late reason, shipped-line note), when saved, then the shipment shows the new value and one audit entry records the Supervisor, UTC time, the reason, and each changed field as old to new.
+  - Given a correction of a ledger-affecting field (part, revision, lot, quantity shipped) or of the status, when attempted, then it is rejected with a message that inventory is corrected through a cycle count, and nothing changes.
+  - Given a correction that changes a promise date or ship date, when the dashboard is reloaded, then KPI-1 and OTIF use the corrected value (one KPI module) and the audit entry shows the change.
+  - Given a correction request whose body contains a user id, status or timestamp field, when submitted, then it is rejected (400) (identity comes from the session).
+  - Given the shipment detail page, when a correction exists, then a "Corrections" list shows time, Supervisor, reason and old to new values in text, in time order.
+- **Out of scope:** Un-shipping a shipment, changing status, editing status history, ledger or verification records, bulk corrections.
+- **Open question (owner Marcus, contract):** exact list of correctable fields; the list above is [P].
+
 ## 5. Dependency summary (scope section 6 build order)
 
 ### 5.1 Core build order (authoritative)
@@ -1762,8 +1836,8 @@ As a **Supervisor**, I want to filter the dashboard by customer and carrier so t
 | Batch | V1-CORE cards (in build order) | Needs first |
 |-------|--------------------------------|-------------|
 | B0 Walking skeleton and proof of concept | US-083 | G0 |
-| B1 Auth, roles, audit, lookups, targets and reporting date, seed framework | US-001, US-003, US-005, US-007, US-008, US-011 | US-083 |
-| B2 Shipments (F1-F3), status history, list and detail | US-014, US-016, US-019, US-020, US-021, US-024 | US-003, US-007 |
+| B1 Auth, roles, audit, lookups, targets and reporting date, seed framework, Resources page | US-001, US-003, US-005, US-007, US-008, US-011, US-085 | US-083 |
+| B2 Shipments (F1-F3), status history, list and detail, Supervisor correction | US-014, US-016, US-019, US-020, US-021, US-024, US-086 | US-003, US-007 |
 | B3 Packaging errors, rework, corrective actions, ship gate (F4-F6) | US-027, US-029, US-030, US-032 | US-016, US-019, US-021 |
 | B4 Inventory: receipts, ledger, ship posts to ledger, counts, lot trace (F7-F9) | US-037, US-035, US-041, US-043, US-044, US-045 | US-003, US-005, US-007, US-021 |
 | B5 KPI module and tests | US-046, US-047, US-049, US-053, US-079 | US-016, US-019, US-021, US-027, US-029, US-044 |
@@ -1799,17 +1873,19 @@ Notes on ordering:
 | Epic | V1-CORE cards | Merged into a core card | Deferred (v1.1) | Total |
 |------|--------------:|------------------------:|----------------:|------:|
 | E0 Foundation | 8 | 3 | 2 | 13 |
-| E1 Shipments | 6 | 5 | 2 | 13 |
+| E1 Shipments | 7 (+US-086) | 5 | 1 (US-025; US-026 removed, UD-6) | 14 |
 | E2 Packaging quality and rework | 4 | 3 | 1 | 8 |
 | E3 Inventory | 6 | 3 | 2 | 11 |
 | E4 KPIs and dashboard | 8 | 5 | 7 | 20 |
 | E5 Reports | 1 | 3 | 4 | 8 |
-| E6 Non-functional | 7 | 4 | 0 | 11 |
-| **Total** | **40** | **26** | **18** | **84** |
+| E6 Non-functional | 8 (+US-085) | 4 | 0 | 12 |
+| **Total** | **42** | **26** | **17** (plus 1 removed: US-026) | **86** |
 
-V1-CORE cards: US-001, 003, 005, 007, 008, 011, 012, 013 (E0); 014, 016, 019, 020, 021, 024 (E1); 027, 029, 030, 032 (E2); 035, 037, 041, 043, 044, 045 (E3); 046, 047, 049, 053, 054, 056, 057, 058 (E4); 065 (E5); 074, 075, 077, 079, 080, 081, 083 (E6).
+T-021 (2026-11-26): +US-085 Resources page, +US-086 Supervisor correction, US-026 removed from v1 (UD-6; counted in the total, built in neither release).
+
+V1-CORE cards: US-001, 003, 005, 007, 008, 011, 012, 013 (E0); 014, 016, 019, 020, 021, 024, 086 (E1); 027, 029, 030, 032 (E2); 035, 037, 041, 043, 044, 045 (E3); 046, 047, 049, 053, 054, 056, 057, 058 (E4); 065 (E5); 074, 075, 077, 079, 080, 081, 083, 085 (E6).
 Merged (26): US-002, 006, 009, 015, 017, 018, 022, 023, 031, 033, 034, 038, 039, 042, 048, 050, 051, 052, 055, 066, 068, 069, 073, 076, 078, 082.
-Deferred (18): US-004, 010, 025, 026, 028, 036, 040, 059, 060, 061, 062, 063, 064, 084, 067, 070, 071, 072.
+Deferred (17, after T-021; US-026 was the 18th and is now removed): US-004, 010, 025, 028, 036, 040, 059, 060, 061, 062, 063, 064, 084, 067, 070, 071, 072.
 Stories counted in the first draft: 82 (76 Must); new in T-004: US-083 (core) and US-084 (deferred).
 
 ### 6.2 Original counts (T-001; superseded)
@@ -1834,7 +1910,7 @@ Sizes: S = 38, M = 38, L = 6.
 | Item | Scope section 3 text | Stories |
 |------|----------------------|---------|
 | 3.1a | Create/edit shipments with header and lines | US-014, US-015 |
-| 3.1b | Status lifecycle (incl. On Hold, Rework, Cancelled, Delivered) with status history | US-016, US-017, US-018, US-026 |
+| 3.1b | Status lifecycle (incl. On Hold, Rework, Cancelled; **no Delivered, UD-6**) with status history; locked after shipping and Supervisor correction (UD-3) | US-016, US-017, US-018, US-086 |
 | 3.1c | Pack & Verify checklist, enforced, verifier differs from packer | US-019, US-020, US-028, US-030 |
 | 3.1d | Ship step: date, carrier, tracking, packages, weight, late reason | US-021, US-022 |
 | 3.1e | Document checklist flags | US-023 |
@@ -1859,6 +1935,8 @@ Sizes: S = 38, M = 38, L = 6.
 | 3.5e | Audit log | US-005, US-006, US-010 |
 | 3.5f | Secrets via environment variables | US-075, US-076 |
 | 3.5g | Unit tests for every KPI formula; route tests for permissions | US-046, US-079, US-080, US-082 |
+| 3.5h | Responsive desktop, tablet and mobile layouts; accessibility (T-021) | US-077, US-078 |
+| 3.5i | Resources page (T-021) | US-085 |
 | 3.6a | Deterministic seed script (fixed random seed) | US-011, US-081 |
 | 3.6b | Fictional sample data: cast, volumes, peak period, banner | US-009, US-012, US-013 |
 
@@ -1868,7 +1946,7 @@ Every story carries at least one section 3 item; the Could/optional items (deliv
 
 Scope section 3 was rewritten as the "v1 core"; section 3 item letters in 7.1 keep their meaning, with these changes: 3.1b no longer includes Delivered (deferred US-026); 3.1f no longer includes overdue/due-soon views (US-025 deferred; the list "Overdue" filter is in US-024); 3.3a-c: US-036 and US-040 deferred; 3.4a/b: charts C4 to C6 and needs-attention lists deferred; 3.4c: only the date range filter (US-084 deferred); 3.4d: reports R2, R5, R6, R8 deferred; 3.5a: US-004 deferred; 3.5e: US-010 deferred. New items: **3.4e fixed reporting date** (US-008, US-054), **3.7 hosting and deployment** (US-083, US-081), **3.6c demo users and Admin reset** (US-011). Items covered only by deferred stories are listed in scope section 3.8. Every core item still has at least one V1-CORE story.
 
-### 7.2 Scope section 5 acceptance criteria to stories (T-004, authoritative; 11 criteria)
+### 7.2 Scope section 5 acceptance criteria to stories (T-021, authoritative; 13 criteria, numbers 1 to 11 unchanged since T-004)
 
 | AC | Criterion (project-scope.md section 5) | Stories (primary evidence first) |
 |----|----------------------------------------|----------------------------------|
@@ -1880,9 +1958,13 @@ Scope section 3 was rewritten as the "v1 core"; section 3 item letters in 7.1 ke
 | 6 | KPI-1 to KPI-7 unit tests with hand-calculated fixtures | US-079, US-046, US-047, US-049, US-053 |
 | 7 | Non-permitted roles get 403, unauthenticated get 401 (tested) | US-003, US-080, US-001, US-074 |
 | 8 | One command reset-seed locally; Admin reset on the deployed site | US-011, US-012, US-013, US-081 |
-| 9 | Usable on laptop and tablet; text status; accessibility scan | US-077, US-054, US-056, US-057, US-058 |
+| 9 | Responsive on desktop, tablet and mobile; text status; accessibility scan (widened by T-021) | US-077, US-078, US-054, US-056, US-057, US-058, US-085 |
 | 10 | Runs on Netlify; records persist; previews isolated | US-083, US-081 |
-| 11 | Fixed reporting date labelled; non-empty KPIs and charts on any real date | US-008, US-054, US-012, US-013 |
+| 11 | Dashboard (six KPI cards, three charts) and reports (R1, R3, R4, R7 with CSV) with fixed reporting date label; non-empty on any real date; fictional data, DEMO banner | US-008, US-054, US-056, US-057, US-058, US-065, US-045, US-012, US-013, US-083 |
+| 12 | Late reason regardless of tolerance (UD-1); Shipped and Cancelled locked, audited Supervisor correction (UD-3); reopen and contain Supervisor and Quality only (UD-4); severity Low, Medium, High, Critical (UD-5) | US-021 (US-022), US-014 (US-015), US-086, US-016, US-032, US-027, US-080 |
+| 13 | Resources page linked from header or footer with official docs, GitHub repository and research docs | US-085 |
+
+Criterion 5 also carries UD-2 (approver is neither counter nor submitter): US-044. Criterion 8 also carries the seven demo users: US-011.
 
 ### 7.3 Original acceptance criteria mapping (T-001; superseded by 7.2)
 
@@ -1904,7 +1986,7 @@ Primary evidence stories end-to-end: AC1 is verified by one scripted walk-throug
 
 ### 8.1 Deferred to v1.1 / later (in this backlog, labelled `Release: DEFERRED (v1.1)`)
 
-US-004 Manage users and roles · US-010 Archive · US-025 Overdue/due-soon views · US-026 Delivered date · US-028 Pre-filled error from failed verification · US-036 Release/reject held material · US-040 Manual adjustment · US-059 C4 · US-060 C5 · US-061 C6 · US-062 Needs-attention lists · US-063 Click-through · US-064 KPI-8 · US-067 R2 · US-070 R5 · US-071 R6 · US-072 R8 · US-084 Customer and carrier filters. Reasons are on each story and in project-scope.md section 3.8.
+US-004 Manage users and roles · US-010 Archive · US-025 Overdue/due-soon views · US-028 Pre-filled error from failed verification · US-036 Release/reject held material · US-040 Manual adjustment · US-059 C4 · US-060 C5 · US-061 C6 · US-062 Needs-attention lists · US-063 Click-through · US-064 KPI-8 · US-067 R2 · US-070 R5 · US-071 R6 · US-072 R8 · US-084 Customer and carrier filters. Reasons are on each story and in project-scope.md section 3.8.
 
 ### 8.2 Deferred to v2 (scope section 4, not in this backlog)
 
@@ -1937,7 +2019,7 @@ Priya does **not** edit `docs/project-scope.md`. Proposed resolutions below foll
 ### Q-02
 - **Issue:** Delivered date is optional: scope 3.1 lists "(Delivered)" in parentheses, research treats it as optional, and v1 KPIs use ship date.
 - **Where:** scope §3.1, §4; docs/01 §1.2; docs/05 KPI-1
-- **Proposed resolution:** Keep a Could story (US-026) for manual entry; no KPI depends on it; Delivered never blocks any flow.
+- **Proposed resolution:** Keep a Could story (US-026) for manual entry; no KPI depends on it; Delivered never blocks any flow. **RESOLVED 2026-11-26 (UD-6):** the user removed the Delivered status from v1; US-026 is removed and the item moved to the v2 carrier-integration row.
 - **Decision / blocking:** Non-blocking.
 
 ### Q-03
@@ -2078,3 +2160,4 @@ Priya does **not** edit `docs/project-scope.md`. Proposed resolutions below foll
 |------|--------|----|
 | 2026-11-25 | First draft of v1 backlog (T-001) | Priya |
 | 2026-11-25 | T-004: V1-CORE cut (40 cards, 26 merged, 18 deferred, 84 stories); release label on every story; new US-083 and US-084; dependencies re-checked; counts, traceability and AC mapping rewritten; Q-01, Q-05, Q-07, Q-11 resolved; Q-21 to Q-24 added; permissions-matrix.md created | Priya |
+| 2026-11-26 | T-021: user decisions UD-1 to UD-10 applied. New section 1.1 (decisions and severity definitions). New stories **US-085** (Resources page) and **US-086** (Supervisor correction). Changed ACs: **US-008** (tolerance note), **US-012** (no Delivered, severity), **US-015** (locked Shipped/Cancelled, 409), **US-016** (header, reopen Supervisor/Quality, re-pack packer), **US-017** (Shipped/Cancelled), **US-021** (header, UD-1), **US-022** (late reason regardless of tolerance), **US-025** (no Delivered), **US-026** (removed), **US-027** (severity Low/Medium/High/Critical), **US-032** (contain Supervisor/Quality), **US-033** (no Delivered), **US-044** (approver is not counter or submitter, 3 new ACs), **US-047** (no Delivered, tolerance and late reason), **US-077/US-078** (desktop, tablet, mobile; new ACs). Index, counts (42 core, 17 deferred, 1 removed, 86 total), traceability (3.1b, 3.5h, 3.5i; scope section 5 now 13 criteria, new 12 and 13) updated. Permissions matrix: P-26 to P-29, R-4 widened, R-14, R-15, T-23 to T-28. Scope: sections 2, 3.1, 3.2, 3.3, 3.4, 3.5, 3.6, 3.8, 4, 5 and changelog. New files: resources.md, demo-script.md | Priya |

@@ -1,6 +1,6 @@
 # Project Scope — Version 1
 
-**Date:** 2026-11-25 (revised 2026-11-25 after user approval, see Changelog) · **Project:** Manufacturing Shipping & Inventory Operations Dashboard
+**Date:** 2026-11-25 (revised 2026-11-26 after user decisions UD-1 to UD-10, see Changelog) · **Project:** Manufacturing Shipping & Inventory Operations Dashboard
 (educational prototype, graduate AI class) · **Builders:** a team of AI software agents (Claude Code)
 
 **Stack:** see ADR-001 (docs/ADR-001.md) — supersedes the Flask/SQLite proposal in docs/07 §7.1.
@@ -23,11 +23,11 @@ with realistic fictional data. Version 1 is the **smallest complete** product th
 
 Five roles: **Admin, Supervisor, Shipping, Receiving, Quality** (shop-floor names: shipping
 associate, receiving/inventory clerk, quality technician, supervisor, administrator), plus an
-**optional read-only Viewer** (proposed: keep, because it costs almost nothing and gives a safe
-guest login for a public site; it can be dropped without affecting any story). Roles follow
+**read-only Viewer** (kept and seeded as the seventh demo user: a safe guest login for a public
+site; it is not an operational role). Roles follow
 [07-software-design.md](07-software-design.md) §7.2. The role x action matrix is in
-[plan/permissions-matrix.md](plan/permissions-matrix.md) (DRAFT until the Security Reviewer
-signs off) and is **enforced server-side**; admin functions are restricted to Admin.
+[plan/permissions-matrix.md](plan/permissions-matrix.md) (reviewed by the Security Reviewer) and is
+**enforced server-side**; admin functions are restricted to Admin.
 
 **Verification rule (user decision):** Shipping, Quality and Supervisor users may verify a
 shipment, but the **verifier must be a different person from the packer**, enforced by the
@@ -40,14 +40,23 @@ users (see §3.6).
 - Create/edit shipments with header (customer, PO, order/requested/promise dates) and lines
   (part, revision, qty ordered, lot); document checklist flags (packing slip, BOL, C of C, labels).
 - Status lifecycle: Planned → Ready to Pack → Packing → Verified → Shipped, plus On Hold,
-  Rework and Cancelled — with status history. (Delivered is optional and deferred, §3.8.)
-- Pack & Verify checklist (enforced; **verifier ≠ packer, server-enforced**).
-- Ship step: ship date, carrier (lookup), tracking number, packages, weight; late reason when late.
+  Rework and Cancelled — with status history. **There is no Delivered status in v1** (user
+  decision UD-6: no carrier integration; delivery tracking is v2, §4).
+- Pack & Verify checklist (enforced; **verifier ≠ packer, server-enforced**). **Reopen**
+  (Rework → Packing) is a Supervisor or Quality action (UD-4).
+- Ship step: ship date, carrier (lookup), tracking number, packages, weight. **A late reason is
+  required whenever ship date is after promise date, regardless of the on-time tolerance
+  setting** (UD-1); the tolerance affects only the On-Time KPI.
+- **Locked after shipping (UD-3):** Shipped and Cancelled shipments cannot be edited directly
+  (409). A Supervisor can apply an audited **correction** with a reason; the audit records old and
+  new values.
 - Shipment list with search/filters (including late/overdue) and a shipment detail page.
 
 ### 3.2 Packaging error and rework logging
-- Packaging error form with fixed categories, severity, detection point, before/after-ship flag
-  (customer-found errors included); error list and close-out.
+- Packaging error form with fixed categories, **severity Low / Medium / High / Critical** (UD-5;
+  definitions in [plan/backlog.md](plan/backlog.md) §1.1), detection point, before/after-ship flag
+  (customer-found errors included); error list, **containment** (Supervisor or Quality, UD-4) and
+  close-out.
 - Rework events with action and minutes.
 - Root-cause category (6 M), 5 Whys note, simple corrective action with owner/due date/status.
 - A failed verification cannot reach Shipped without a logged error, completed rework and a
@@ -59,13 +68,16 @@ users (see §3.6).
 - Append-only inventory transaction ledger (receipt, ship, transfer, production complete, scrap,
   supervisor-approved adjustment from cycle counts).
 - On-hand by part/location/lot (derived).
-- Basic blind cycle count with tolerance by ABC class and supervisor approval.
+- Basic blind cycle count with tolerance by ABC class and supervisor approval. **The approver may
+  not be a person who counted (entered or recounted any line) or submitted that count** (UD-2).
 - Lot trace report (backward to receipt, forward to shipment/customer).
 
 ### 3.4 Dashboard, charts and reports
 - KPI tiles: On-Time Shipment %, OTIF %, Packaging Error Rate %, Packaging FPY %, Median Shipment
   Cycle Time, Inventory Accuracy % — each vs target and previous period
-  (formulas in [05-performance-metrics.md](05-performance-metrics.md)). Rework frequency (KPI-5)
+  (formulas in [05-performance-metrics.md](05-performance-metrics.md); user decisions UD-7 to
+  UD-10 fix the KPI-7 first-count basis, the packaging error rate reporting date, customer-found
+  errors in first-pass yield, and one P90 method, and are documented by Kenji). Rework frequency (KPI-5)
   is computed by the same KPI module and shown in the error/rework report.
 - **Three charts:** C1 On-time % by week vs target, C2 Shipments per day vs packaging error rate
   (shows the peak period), C3 Packaging errors by category (Pareto)
@@ -90,7 +102,14 @@ users (see §3.6).
   queries, server-side input validation, append-only audit log with a simple Admin view, secrets
   via Netlify environment variables; end-to-end tests (Playwright) for the acceptance flows.
 - Unit tests for every KPI formula; route/permission tests.
-- Accessibility and responsiveness (laptop and tablet; status shown as text, not colour alone).
+- Accessibility and responsiveness: **responsive layouts for desktop, tablet and mobile**
+  (usable at about 1440, 768 and 390 px widths with no horizontal page scroll); status shown as
+  text, not colour alone; WCAG 2.2 AA automated scan clean of critical and serious findings.
+- **Resources page** (linked from the header or footer of every page): official documentation
+  links for the technologies used (Astro, Netlify Functions and Database, PostgreSQL, Chart.js,
+  Zod, Vitest, Playwright), the standards (OWASP Top 10 and ASVS, WCAG 2.2), the public GitHub
+  repository, and the project research documents (docs/01 to 08, sources, ADR-001, scope) linked
+  to GitHub. Link list: [plan/resources.md](plan/resources.md).
 
 ### 3.6 Fictional sample data
 A deterministic seed generator (fixed random seed) that creates:
@@ -103,7 +122,7 @@ A deterministic seed generator (fixed random seed) that creates:
 | Carriers | 4 | SwiftLane Parcel, Harbor Freight Lines LTL, TransAxis Truckload, Customer Pickup |
 | Parts | ~25 | Format `CRC-####-<rev>` (e.g., CRC-2041-B Bracket, Machined), ABC mix ≈ 20/30/50 % |
 | Locations | ~10 | RCV-01, HOLD-01, STK-A01…, FG-01, SHIP-01 |
-| Users | 6 + optional Viewer | Obviously fake names and usernames such as `demo.shipper1` / "Demo Shipper One": **2 Shipping, 1 Receiving, 1 Quality, 1 Supervisor, 1 Admin** (+ optional `demo.viewer`), so verifier ≠ packer can be tested. Demo-only passwords, documented as such, never to be reused. List in [plan/permissions-matrix.md](plan/permissions-matrix.md) |
+| Users | 7 | Obviously fake names and usernames such as `demo.shipper1` / "Demo Shipper One": **2 Shipping, 1 Receiving, 1 Quality, 1 Supervisor, 1 Admin, 1 Viewer** (`demo.viewer`), so verifier ≠ packer can be tested. Demo-only passwords, documented as such, never to be reused. List in [plan/permissions-matrix.md](plan/permissions-matrix.md) |
 | Reporting date | 1 | Fixed "as of" date 2026-11-25; seed data spans the 6 months ending on it |
 | Shipments | ~300 over 6 months | Includes a simulated **peak period** (≈ 2× volume for 3–4 weeks) with higher error/late rates; includes SH-1042 (paperwork error storyline, docs/06 §6.3) |
 | Packaging errors | ~6–8 % of shipments overall, higher during peak | Category mix skewed so the Pareto is meaningful (labels & paperwork largest) |
@@ -141,7 +160,6 @@ in the order Priya sets. Story IDs refer to [plan/backlog.md](plan/backlog.md).
 | Admin user-management screen (create/deactivate/change role) | US-004 | Users are seeded; role rules are still enforced and tested |
 | Archive instead of delete | US-010 | No delete actions exist in the core; history is preserved by status |
 | Overdue/due-soon view, needs-attention lists, click-through from tiles | US-025, US-062, US-063 | Shipment list filters (late/overdue) cover the need |
-| Optional delivered date | US-026 | KPIs use ship date |
 | Pre-filled error form from a failed verification | US-028 | Error is logged with the same form |
 | Release/reject held material screen, manual stock adjustment outside a count | US-036, US-040 | Held stock released by a transfer; adjustments come from approved counts |
 | Charts C4 late reasons, C5 rework by week, C6 accuracy by ABC; KPI-8 dock-to-stock | US-059, US-060, US-061, US-064 | Core has three charts and six tiles |
@@ -152,7 +170,7 @@ in the order Priya sets. Story IDs refer to [plan/backlog.md](plan/backlog.md).
 
 | Feature | Reason for postponing |
 |---------|----------------------|
-| Carrier API / real-time tracking, delivered-date import | External integration & credentials; v1 measures on-time *shipment* |
+| Carrier API / real-time tracking, delivered-date import, **Delivered status and delivered date** (UD-6) | External integration & credentials; v1 measures on-time *shipment*, so no Delivered status exists in v1 |
 | EDI (856 ASN), ERP integration | Complex standards; not needed to demo the workflow |
 | Barcode / scanner verification and label printing | Hardware & label formats; v1 uses checklist poka-yoke |
 | Generating packing slips, BOLs, C of C from data | Valuable (removes paperwork discrepancies) but large |
@@ -170,29 +188,54 @@ in the order Priya sets. Story IDs refer to [plan/backlog.md](plan/backlog.md).
 
 ## 5. Acceptance criteria for v1 (core)
 
-1. A user can create a shipment, pack it (user A), verify it (user B), log an error, rework it,
-   and ship it — and the dashboard KPIs change accordingly.
-2. A failed verification cannot proceed to Shipped without a logged error, completed rework and a
-   passing re-verification (direct requests are refused with 409).
+Thirteen essential, testable criteria (numbers 1 to 11 are unchanged from the 2026-11-25
+version; 12 and 13 are new). They cover the required v1 features: professional dashboard;
+shipment entry, status and verification; packaging errors and rework; receiving and
+transactions; cycle counts and accuracy; KPI cards and charts; reports and CSV; secure role-based
+access; seven demo users; fictional data; responsive layouts; Resources page.
+
+1. **Shipment flow.** A user can create a shipment, pack it (user A), verify it (user B), log an
+   error, rework it, re-pack and re-verify it, and ship it — and the dashboard KPIs change
+   accordingly. The status list has no Delivered status (UD-6).
+2. **Ship gate.** A failed verification cannot proceed to Shipped without a logged error,
+   completed rework and a passing re-verification (direct requests are refused with 409).
 3. **Verifier ≠ packer:** the server refuses verification by the person recorded as packer
    (UI and direct request); a different Shipping, Quality or Supervisor demo user can verify.
-4. A receipt creates inventory; a shipment consumes it; on-hand per lot is correct; lot trace
-   shows supplier receipt → customer shipment for a seeded lot.
-5. A cycle count with a variance produces a Supervisor-approved adjustment and updates
-   inventory accuracy %.
-6. KPI-1 to KPI-7 (the six tile KPIs plus rework frequency) have passing unit tests against
-   hand-calculated fixtures.
-7. **Non-permitted roles get HTTP 403** on restricted actions and unauthenticated requests get
-   401/redirect, per the permission matrix (tested for every restricted action).
-8. One command (`npm run db:reset-seed`) rebuilds the demo database deterministically from
-   scratch locally, and an Admin-only reset does the same on the deployed Netlify site.
-9. Pages are usable on a laptop and a tablet; status is conveyed with text, not colour alone;
-   no critical or serious automated accessibility findings.
-10. The app runs on Netlify; records created on the deployed site **persist** across redeploys and
-    function cold starts, and a deploy preview's data changes do not affect production
-    (verified by QA).
-11. The dashboard and reports show a clearly labelled **fixed reporting date**, and with the
-    seeded data the default view shows non-empty KPIs and charts regardless of the real date.
+4. **Receiving and transactions.** A receipt creates inventory; a shipment consumes it; on-hand
+   per lot is correct (append-only ledger); lot trace shows supplier receipt → customer shipment
+   for a seeded lot.
+5. **Cycle counts and accuracy.** A blind cycle count with a variance produces a
+   Supervisor-approved adjustment and updates inventory accuracy %; the approver is refused if
+   they counted or submitted that count (UD-2).
+6. **KPI tests.** KPI-1 to KPI-7 (the six tile KPIs plus rework frequency) have passing unit tests
+   against hand-calculated fixtures.
+7. **Secure role-based access.** Non-permitted roles get HTTP 403 on restricted actions and
+   unauthenticated requests get 401/redirect, per the permission matrix (tested for every
+   restricted action, including reopen, contain, correction and approval).
+8. **Seed and reset.** One command (`npm run db:reset-seed`) rebuilds the demo database
+   deterministically from scratch locally with the **seven demo users**, and an Admin-only reset
+   does the same on the deployed Netlify site.
+9. **Responsive and accessible.** Pages are usable on desktop, tablet and mobile widths with no
+   horizontal page scroll; status is conveyed with text, not colour alone; no critical or serious
+   automated accessibility findings.
+10. **Hosting.** The app runs on Netlify; records created on the deployed site **persist** across
+    redeploys and function cold starts, and a deploy preview's data changes do not affect
+    production (verified by QA).
+11. **Dashboard and reports.** The dashboard (six KPI cards and three charts) and the reports
+    (R1 Shipment Log, R3 Error and Rework Log, R4 On-Hand, R7 Lot Trace, each with CSV export)
+    show a clearly labelled **fixed reporting date**, and with the seeded data the default view
+    shows non-empty KPIs and charts regardless of the real date. All data is fictional and every
+    page shows the DEMO banner.
+12. **Shipment and error rules.** (a) A late reason is required whenever ship date is after
+    promise date, regardless of the tolerance setting (UD-1). (b) Shipped and Cancelled shipments
+    cannot be edited directly (409); a Supervisor correction with a reason is audited old to new
+    (UD-3). (c) Reopen (Rework → Packing) and contain (packaging error) are refused with 403 for
+    everyone except Supervisor and Quality (UD-4). (d) Packaging-error severity is Low, Medium,
+    High or Critical (UD-5).
+13. **Resources page.** A Resources page, linked from the header or footer, lists the official
+    documentation (Astro, Netlify Functions and Database, PostgreSQL, Chart.js, Zod, Vitest,
+    Playwright, OWASP Top 10 and ASVS, WCAG 2.2), the GitHub repository and the project research
+    documents linked to GitHub, exactly as in [plan/resources.md](plan/resources.md).
 
 ## 6. Suggested build order (agent hand-off)
 
@@ -244,3 +287,15 @@ in the order Priya sets. Story IDs refer to [plan/backlog.md](plan/backlog.md).
   server-enforced permission matrix; (8) scope reduced to the smallest complete "v1 core" (§3);
   cut items are kept as v1.1 / later (§3.8) and §5 acceptance criteria rewritten (11 criteria).
   Applied by Priya (T-004).
+- 2026-11-26 — user decisions UD-1…UD-10, Resources page. The user approved building Version 1
+  and decided (relayed in docs/plan/build-plan.md): UD-1 a late reason is required whenever ship
+  date is after promise date, regardless of tolerance (tolerance affects KPI-1 only); UD-2 a user
+  may not approve a cycle count they counted or submitted; UD-3 Shipped and Cancelled shipments
+  are locked, corrections are an audited Supervisor action with a reason; UD-4 reopen and contain
+  are Supervisor and Quality only; UD-5 severity is Low, Medium, High, Critical; UD-6 the Delivered
+  status is removed from v1 (moved to the v2 carrier-integration row); UD-7 to UD-10 KPI rules
+  (first-count accuracy, ship-date basis for error rate, customer-found errors in first-pass yield,
+  one P90 method) are documented by Kenji in the KPI spec. Also added: a Resources page (§3.5),
+  responsive desktop, tablet and mobile layouts (§3.5), Viewer kept as the seventh demo user (§2,
+  §3.6). Acceptance criteria §5 reduced to a final list of 13 (1 to 11 keep their numbers; 12 and
+  13 are new). Applied by Priya (T-021).
