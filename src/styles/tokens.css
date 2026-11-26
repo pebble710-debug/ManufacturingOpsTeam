@@ -1,0 +1,168 @@
+/*
+ * Cobalt Ridge Ops Dashboard (fictional demo) - design tokens
+ * Task T-025 - owner: Maya (ux-ui-designer) - spec: docs/design/ui-spec.md section 3
+ *
+ * Rules
+ *  - Only custom properties live here (plus a few root-level rules at the end).
+ *  - Contrast ratios in the comments were calculated by hand with the WCAG 2.2
+ *    relative-luminance formula. UNVERIFIED by tool: Quinn re-checks the built pages
+ *    with axe-core and a contrast checker (ui-spec section 9.3).
+ *  - Never use color alone: every status, severity and KPI direction also carries text
+ *    and an icon shape (see component-classes.md).
+ *
+ * Breakpoints (media queries cannot read custom properties; use these literal values,
+ * mobile-first with min-width):
+ *    40rem  =  640 px   large phone / small tablet: 2-column KPI grid
+ *    48rem  =  768 px   tablet portrait: P2 table columns, paired fields
+ *    64rem  = 1024 px   tablet landscape / laptop: left nav, 3-column KPI grid
+ *    80rem  = 1280 px   laptop: 6 KPI tiles in one row
+ *   120rem  = 1920 px   wall screen: root font 125 %
+ *   ?view=wall -> class "view-wall" on <html> (set server-side): root font 150 %
+ */
+
+:root {
+  color-scheme: light dark;
+
+  /* ---------- Color: neutrals (light theme, default) ---------- */
+  --color-bg-page:            #F5F7FA;
+  --color-surface:            #FFFFFF;
+  --color-surface-header:     #E8ECF1;  /* table header, neutral tint */
+  --color-border:             #D3D9E2;  /* decorative dividers ONLY, never the sole boundary of a control */
+  --color-border-strong:      #6B7686;  /* input / control boundaries: 4.6:1 on white, 4.3:1 on page (needs 3:1) */
+  --color-text:               #1A2330;  /* 15.8:1 on white, 14.8:1 on page */
+  --color-text-muted:         #4A5565;  /* 7.6:1 on white, 7.0:1 on page */
+  --color-text-on-dark:       #FFFFFF;  /* 15.3:1 on top bar */
+  --color-text-on-dark-muted: #C9D6E6;  /* 10.4:1 on top bar */
+  --color-topbar-bg:          #12263F;
+
+  /* ---------- Color: action ---------- */
+  --color-primary:            #0B5CAD;  /* white on primary 6.7:1; primary on white 6.7:1, on page 6.2:1 */
+  --color-primary-hover:      #084A8C;  /* white on hover 8.9:1 */
+  --color-primary-tint:       #EAF2FB;  /* secondary-button hover; primary text on tint 5.9:1 */
+  --color-on-primary:         #FFFFFF;
+  --color-link:               #0B5CAD;  /* always underlined */
+  --color-focus:              #0B5CAD;  /* focus ring on light surfaces: 6.7:1 on white, 6.2:1 on page */
+  --color-focus-on-dark:      #FFFFFF;  /* ring on the navy top bar: 15.3:1 */
+  --color-focus-on-banner:    #1A2330;  /* ring on the amber banner: 11.6:1 */
+
+  /* ---------- Color: demo banner ---------- */
+  --color-banner-bg:          #FFD966;
+  --color-banner-text:        #1A2330;  /* 11.6:1 */
+
+  /* ---------- Color: status families (bg / text; border uses the text color) ---------- */
+  --status-neutral-bg: #E8ECF1;  --status-neutral-text: #26303D;  /* 11.3:1 */
+  --status-info-bg:    #DCEBFA;  --status-info-text:    #083A70;  /*  9.4:1 */
+  --status-success-bg: #DDF3E4;  --status-success-text: #0B4A24;  /*  8.9:1 */
+  --status-warning-bg: #FFF0C2;  --status-warning-text: #5C3A00;  /*  9.0:1 */
+  --status-danger-bg:  #FBE3E1;  --status-danger-text:  #7A1410;  /*  8.9:1 */
+  --status-muted-bg:   #EEF0F3;  --status-muted-text:   #4A5565;  /*  6.6:1 */
+
+  /* Critical severity is the one solid badge (UD-5): white on #7A1410 = 10.9:1 */
+  --severity-critical-bg:   #7A1410;
+  --severity-critical-text: #FFFFFF;
+
+  --color-error-border:     #B3261E;  /* invalid field border, 2 px, with icon + text: 6.5:1 on white */
+
+  /* ---------- Color: charts (marks >= 3:1 on the chart surface) ---------- */
+  --chart-surface: #FFFFFF;           /* chart cards always keep a light surface (canvas colors are fixed in JS) */
+  --chart-text:    #1A2330;
+  --chart-1:       #0B5CAD;           /* primary series, bars: 6.7:1 */
+  --chart-2:       #B45309;           /* secondary series, cumulative line: 5.0:1 */
+  --chart-target:  #4A5565;           /* neutral, dashed: 7.6:1 */
+  --chart-grid:    #D3D9E2;           /* decorative */
+
+  /* ---------- Type ---------- */
+  --font-sans: "Segoe UI", system-ui, -apple-system, Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: ui-monospace, "Cascadia Mono", Consolas, "Liberation Mono", monospace; /* IDs, lots, tracking */
+  --font-size-100: 0.875rem;  /* 14 px: captions, badge text, chart ticks only */
+  --font-size-200: 1rem;      /* 16 px: body, inputs, table text (minimum for content) */
+  --font-size-300: 1.125rem;  /* 18 px: lead text */
+  --font-size-400: 1.25rem;   /* 20 px: h3, card titles */
+  --font-size-500: 1.5rem;    /* 24 px: h2 */
+  --font-size-600: 1.875rem;  /* 30 px: h1 */
+  --font-size-700: 2.25rem;   /* 36 px: KPI value (about 54 px on wall view) */
+  --line-height-body:  1.5;
+  --line-height-tight: 1.2;
+  --font-weight-regular:  400;
+  --font-weight-semibold: 600;
+  --font-weight-bold:     700;
+
+  /* ---------- Spacing (4 px base) ---------- */
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.5rem;
+  --space-6: 2rem;
+  --space-7: 3rem;
+  --space-8: 4rem;
+
+  /* ---------- Radius, elevation, sizes ---------- */
+  --radius-sm:   4px;
+  --radius-md:   8px;
+  --radius-lg:   12px;
+  --radius-pill: 999px;
+  --shadow-card: 0 1px 2px rgba(18, 38, 63, 0.14);
+  --size-target-min:  2.75rem;  /* 44 px: buttons, radios, checkboxes, nav items, row links */
+  --size-target-count: 3.5rem;  /* 56 px: cycle-count inputs on tablets */
+  --size-focus-width: 3px;
+  --size-focus-offset: 2px;
+  --size-nav:         13.75rem; /* 220 px */
+  --size-content-max: 90rem;    /* 1440 px */
+  --size-form-max:    40rem;    /* single-column forms */
+  --size-prose-max:   46rem;
+  --size-chart-height:      18rem;
+  --size-chart-height-wide: 20rem;
+}
+
+/*
+ * Dark theme (optional, follows the operating-system setting).
+ * Contrast notes (hand-calculated, UNVERIFIED by tool): every text pair below is >= 7:1;
+ * control borders >= 4.5:1 on their surface; focus ring >= 8:1 on both page and surface.
+ * Chart cards stay on a light surface (--chart-surface) so Chart.js colors stay valid.
+ */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --color-bg-page:            #0F1620;
+    --color-surface:            #17212E;
+    --color-surface-header:     #213043;
+    --color-border:             #324357;
+    --color-border-strong:      #8795A8;  /* ~5.4:1 on surface */
+    --color-text:               #E8EDF4;  /* ~14:1 on surface */
+    --color-text-muted:         #B3BFCE;  /* ~8.6:1 on surface */
+    --color-topbar-bg:          #0A1422;
+
+    --color-primary:            #8EC1FF;  /* buttons: dark text on light blue */
+    --color-primary-hover:      #B5D6FF;
+    --color-primary-tint:       #1C2E45;
+    --color-on-primary:         #0B1A2C;  /* ~9:1 on primary */
+    --color-link:               #8EC1FF;  /* ~8:1 on surface */
+    --color-focus:              #8EC1FF;
+
+    --status-neutral-bg: #2A3646;  --status-neutral-text: #E1E8F0;
+    --status-info-bg:    #12335A;  --status-info-text:    #CFE4FF;
+    --status-success-bg: #12391F;  --status-success-text: #C9F0D6;
+    --status-warning-bg: #4A3500;  --status-warning-text: #FFE7A3;
+    --status-danger-bg:  #4D1613;  --status-danger-text:  #FFD2CE;
+    --status-muted-bg:   #232C38;  --status-muted-text:   #B3BFCE;
+
+    --severity-critical-bg:   #FFD2CE;
+    --severity-critical-text: #4D1613;
+
+    --color-error-border:     #FF8A80;
+    --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.5);
+    /* banner, top bar text and chart colors intentionally unchanged */
+  }
+}
+
+/* Root-level, token-driven rules */
+@media (min-width: 120rem) { :root { font-size: 125%; } }  /* >= 1920 px wall screens */
+html.view-wall { font-size: 150%; }                          /* ?view=wall, class set server-side */
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation: none !important;
+    transition: none !important;
+    scroll-behavior: auto !important;
+  }
+}

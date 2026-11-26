@@ -337,12 +337,11 @@ Anatomy: `[icon] Label` in a pill, 14 px semibold, 1 px border in the text color
 | On Hold | warning | pause bars | On Hold |
 | Rework | warning | counter-clockwise arrow | Rework |
 | Cancelled | muted (dashed border) | circle with slash | Cancelled |
-| Delivered (later) | success | package with check | Delivered |
 | On time | success | check | On time |
 | Late (n days) | danger | clock | Late (3 days) |
 | Overdue (n days) | danger | clock | Overdue (2 days) |
 | Error status Open / Contained / Closed | warning / info / success | circle / box / check | Open, Contained, Closed |
-| Severity Minor / Major / Critical | neutral / warning / danger | circle / triangle / octagon | Minor, Major, Critical |
+| Severity Low / Medium / High / Critical (UD-5) | neutral / warning / danger / danger solid | circle / triangle / diamond / octagon | Low, Medium, High, Critical |
 | Inspection Accepted / On Hold / Rejected | success / warning / danger | check / pause / cross | Accepted, On Hold, Rejected |
 | Count status Open / Counted / Approved | info / warning / success | circle / pencil / check | Open, Counted, Approved |
 | Corrective action Open / In Progress / Closed / Overdue | warning / info / success / danger | circle / half circle / check / clock | Open, In Progress, Closed, Overdue |
@@ -514,7 +513,7 @@ Shown on shipment detail when status is Rework (and again on Pack & Verify) so t
 
 ```
 Before SH-1042 can ship again
- [x] 1. Packaging error logged          PE-0107 (Paperwork, Major)
+ [x] 1. Packaging error logged          PE-0107 (Paperwork, High)
  [x] 2. Rework completed                Reprint paperwork, 22 min
  [ ] 3. Packed again                    [ Start packing again ] (a new packer is recorded)
  [ ] 4. Verified again by a different person
@@ -754,7 +753,7 @@ Annotations
 1. The warning appears only on edit of a Verified shipment, matching US-015 (returns to Rework with history note).
 2. Lines are **server-rendered rows**: the page opens with 3 empty line rows; "Add another line" is a submit button (name `add_line`) that re-renders with one more row and keeps the values (no JavaScript needed). With JavaScript it may add a row in place. "Remove line" works the same way. Revision is displayed from the selected part (read-only text), not typed.
 3. Document flags are checkboxes with plain labels; they only record whether the documents are ready (generation is v2).
-4. Dates default to the reporting date where the doc says "today" and show the hint. Editing is refused for Shipped, Delivered, Cancelled: the page shows read-only values and a Note ("Shipped shipments can't be edited.") and direct requests are rejected.
+4. Dates default to the reporting date where the doc says "today" and show the hint. Editing is refused for Shipped, Cancelled (there is no Delivered status in v1, UD-6): the page shows read-only values and a Note ("Shipped shipments can't be edited.") and direct requests are rejected.
 5. Status is **not** an editable field anywhere (US-016); it appears as a badge in the page heading on edit.
 6. Customer, part and carrier dropdowns list only active lookups; the existing (deactivated) value stays visible on edit.
 
@@ -787,7 +786,7 @@ Line | Part                    | Rev | Ordered | Shipped | Lot        | Location
 # | Result            | By               | When              | Failed items
 1 | Failed            | Demo Quality     | 25 Nov 09:40      | Packing slip matches
 -- Packaging errors and rework --------------------------------------------------------------
-PE-0107 Paperwork (Major) [Closed]  Rework 22 min  Corrective action: Open   [ View error ]
+PE-0107 Paperwork (High) [Closed]  Rework 22 min  Corrective action: Open   [ View error ]
 -- Status history ---------------------------------------------------------------------------
 When             | From          | To            | By               | Note
 25 Nov 09:14     | Ready to Pack | Packing       | Demo Shipper One |
@@ -962,8 +961,8 @@ Errors & rework                                                [ Log packaging e
 Filters: Status [All v] Category [All v] Severity [All v] Stage [All v] Shipment [SH-____] From [ ] To [ ] [Apply][Clear]
 Showing 1-25 of 41 errors
 Error    | Shipment | Category          | Severity     | Stage       | Status        | Rework min | Corrective action
-PE-0107  | SH-1042  | Paperwork         | [!] Major    | Before ship | [O] Open      | 22         | Open
-PE-0101  | SH-1010  | Incorrect label   | [.] Minor    | After ship  | [O] Overdue...| None       | None
+PE-0107  | SH-1042  | Paperwork         | [!] High     | Before ship | [O] Open      | 22         | Open
+PE-0101  | SH-1010  | Incorrect label   | [.] Low      | After ship  | [O] Overdue...| None       | None
 ```
 
 Annotations: Open errors older than 7 days show "Open - Overdue (9 days)" text (US-034). Category "Other" shows "Needs recategorising" text in the category cell (US-027). "After ship" rows display the text "Customer-found". Columns P1: Error, Shipment, Category, Status; P2: Severity, Stage; P3: Rework minutes, Corrective action. Filters honour the C3 click-through query (`?category=Paperwork&from=…&to=…`). Accessibility and responsive as S03.
@@ -988,7 +987,7 @@ Category (required)         [Select category v]
    Wrong part - Wrong quantity - Incorrect label - Paperwork - Packaging method - Damage - Traceability - Other
 Paperwork type (required when category is Paperwork)
                             [Select v]  Packing slip - BOL - C of C - Customer-specific form - Commercial invoice   (4)
-Severity (required)         ( ) Minor   ( ) Major   ( ) Critical     (definitions below)
+Severity (required)         ( ) Low  ( ) Medium  ( ) High  ( ) Critical   (definitions below)
 Description (required)      [ ........................................................ ]
 (T-016: no root-cause fields here; Quality or Supervisor add them on S13 after saving)
 [ Save packaging error ]   Cancel
@@ -999,7 +998,7 @@ Annotations
 2. Detected-by "Customer" is only valid with "After ship"; the server rejects other combinations with the inline message in 7.3. [P] Pre-select "Customer" and "After ship" when the shipment is Shipped.
 3. **Stage options depend on shipment status and role** (rendered on the server): Shipped shipment + Quality/Supervisor shows both radios with After ship pre-selected; Shipped + Shipping shows a Note ("Only Quality or Supervisor can log errors found after shipping") and no form (R-8); before-ship statuses show only "Before ship" selected.
 4. Paperwork type is rendered always, with "(required when category is Paperwork)", and with JavaScript is hidden unless Paperwork is selected.
-5. Severity definitions as help text beneath the radios [P, wording is mine; Priya/Quinn to confirm]: Minor = caught and fixed with no effect on the customer; Major = shipment cannot ship until corrected; Critical = could cause a safety, regulatory or serious customer problem (illustrative wording, no compliance claim).
+5. Severity definitions as help text beneath the radios [P, wording is mine; Priya/Quinn to confirm]: Low = caught and fixed with no effect on the customer; Medium = fixed but needed rework or a re-check; High = shipment cannot ship until corrected; Critical = could cause a safety, regulatory or serious customer problem (illustrative wording, no compliance claim).
 6. Category "Other" shows a hint: "Quality will review and recategorise it."
 7. *(T-016)* Root cause is **not** part of this form: contract E-18 does not accept it, because root cause is P-14 (Quality, Supervisor) and Shipping may log errors. After saving, Quality and Supervisor see a `[ Add root cause ]` button on S11, which opens S13.
 
@@ -1012,7 +1011,7 @@ Accessibility: radio groups with legends; description has a counter hint; errors
 **Route** `/quality/errors/{PE-no}` · **Roles** all view · **Stories** US-027, US-029, US-032 (US-034 close-out)
 
 ```
-PE-0107  [O] Open   Paperwork - Packing slip   [!] Major   Before ship   Shipment SH-1042
+PE-0107  [O] Open   Paperwork - Packing slip   [!] High    Before ship   Shipment SH-1042
 Detected 25 Nov 2026 10:05 by Verifier - Reported by Demo Quality
 Description: Packing slip lists revision B, parts are revision C.
 +- Close-out ------------------------------------------------------------------------------+
