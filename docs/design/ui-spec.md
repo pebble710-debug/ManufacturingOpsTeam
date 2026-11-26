@@ -631,6 +631,7 @@ Accessibility: `<h1>` is "Sign in"; error is `role="alert"` and focus goes to it
 |         | +------------------------------------------------------------------------------------+ |
 |         | Period: ( ) Last 7 days  (x) Last 30 days  ( ) Last 90 days  ( ) Custom         (2)   |
 |         | From [2026-10-27]  To [2026-11-25]  [ Apply ]   Compared with 27 Sep - 26 Oct 2026     |
+|         | On-time measured against: (x) Promise date  ( ) Requested date   (T-016, US-047)       |
 |         |                                                                                         |
 |         | <h2 class="visually-hidden">Key measures</h2>                                           |
 |         | +---------+---------+---------+---------+---------+---------+                  (3)      |
@@ -664,7 +665,7 @@ Accessibility: `<h1>` is "Sign in"; error is `role="alert"` and focus goes to it
 
 Annotations
 1. **Reporting-date label** (component 4.2) is the first content under the `<h1>`, always visible, plain text. In fixed mode the default period is the 30 days ending on the reporting date (US-008); with seed data the default view is never empty (criterion 11).
-2. **Date range** is a GET form (presets as radios plus custom From/To). Applying it updates tiles, charts and the "Open ..." links together and the previous period is the equal-length period immediately before (US-054). Invalid range (from after to) shows the standard inline error: "From date can't be after the To date."
+2. **Date range** is a GET form (presets as radios plus custom From/To). Applying it updates tiles, charts and the "Open ..." links together and the previous period is the equal-length period immediately before (US-054). Invalid range (from after to) shows the standard inline error: "From date can't be after the To date." *(T-016)* The same GET form carries the KPI-1/KPI-2 basis radios (US-047 toggle), sent as the `basis` parameter of contract E-48. The default comes from the `on_time_basis` setting; the On-Time and OTIF tiles name the basis in their "How is this calculated?" text.
 3. **KPI row** (component 4.3), six tiles in the fixed order; one row at 1280 px and wider. Wireframe text is abbreviated; the real tile has the full anatomy.
 4. **Charts** (component 4.4) with the specs below. Each chart is a `<section>` with its question as `<h2>`.
 5. Reserved, **not built**: needs-attention lists (US-062), tile click-through (US-063), customer and carrier filters (US-084), charts C4–C6 (US-059–061). Do not render placeholders; just leave the layout able to add a row under the charts.

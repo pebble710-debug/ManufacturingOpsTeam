@@ -1,39 +1,53 @@
 # Project Status Board
 
-Maintained by: orchestrator (Olivia) · Last updated: 2026-11-25
+Maintained by: orchestrator (Olivia) · Last updated: 2026-11-26
 
 ## Current phase
-**Phase 1 — Architecture: waiting for user approval of ADR-001.** No implementation may start
-until `docs/ADR-001.md` is Accepted and the scope edits it requires are approved.
+**Phase 2 (Design) and local technical verification are COMPLETE. Waiting for the user's review
+and go-ahead before Phase 3 (Foundation) implementation.**
+Architecture verdict (T-016): **Ready with conditions** (see `docs/plan/consistency-review.md`).
+QA verdict (T-017): **GO** at the planning gate (see `docs/qa/test-report-2026-11-26.md`).
+Nothing has been provisioned or deployed on Netlify. No purchases or plan changes.
 
 ## Tasks
 
-| Task | Title | Agent | Status | Depends on | Output / notes |
-|------|-------|-------|--------|-----------|----------------|
-| T-001 | v1 product backlog | product-manager (Priya) | DONE | — | `docs/plan/backlog.md`: 7 epics, 82 stories (76 Must / 4 Should / 2 Could), 20 scope questions (§9) |
-| T-002 | ADR-001 stack, persistence & deployment | software-architect (Marcus) | DONE, ADR **Proposed** | — | `docs/ADR-001.md`: recommends Astro SSR + `@astrojs/netlify` + Netlify Database (Postgres) + Chart.js |
-| T-003 | User decision: accept/reject ADR-001; Free vs Personal plan contingency; repo visibility | user | WAITING | T-002 | See the decisions list below |
-| T-004 | Apply approved scope edits (ADR-001 §11.1) + answer backlog Q-01, Q-05, Q-07, Q-11 | product-manager | TODO (after T-003) | T-003 | Edits `docs/project-scope.md` with a changelog line |
-| T-005 | Update docs/07 §7.1–7.4 per ADR-001 §11.2 | software-architect | TODO (after T-003) | T-003 | Mark the original stack as historical; don't delete it |
-| T-006 | Align agent/skill references to `docs/ADR-001.md`; TypeScript tooling in skills (ADR-001 §11.3) | agent-builder (Ada) | TODO (after T-003) | T-003 | Must pass `validate-agent-team` |
-| T-007 | Technical spike, ≤ 1 day (ADR-001 §12.1) | devops-engineer + backend-developer | TODO (after T-003) | T-003 | Checks DB connection, seed time, CI emulator, middleware placement; marks the ADR Implemented or revises it |
-| T-008 | ADR-002 hosting & deploy pipeline | software-architect + devops-engineer | TODO | T-007 | Covers previews and the credit budget |
-| T-009 | ADR-003 auth & sessions | software-architect + security-reviewer | TODO | T-003 | |
-| T-010 | Phase 2 design: schema, UI spec, API contract | data-model-specialist, ux-ui-designer, backend-developer | TODO | T-004, T-007 | |
+| Task | Title | Agent | Status | Output |
+|------|-------|-------|--------|--------|
+| T-001 | v1 product backlog | product-manager | DONE | `docs/plan/backlog.md` |
+| T-002 | ADR-001 stack decision | software-architect | DONE | `docs/ADR-001.md` |
+| T-003 | User decision on ADR-001 | user | DONE (conditional approval 2026-11-25) | — |
+| T-004 | Scope update, V1-CORE cut, permissions draft | product-manager | DONE | `docs/project-scope.md`, backlog Release labels (40 core cards + 26 merged, 18 deferred), `docs/plan/permissions-matrix.md` |
+| T-005 | ADR-001 conditional acceptance; docs/07 superseded | software-architect | DONE | `docs/ADR-001.md` §0, `docs/07-software-design.md` §7.1 |
+| T-006 | Fix ADR refs and tooling in agents/skills | agent-builder | DONE | `.claude/`, `CLAUDE.md`, `docs/software-team.md` |
+| T-007 | Local proof of concept | devops-engineer | DONE (local PASS; hosted checks pending) | `docs/poc/poc-report.md`, `spikes/poc-astro-netlify-db/` |
+| T-011 | Fold PoC results into ADR-001 | software-architect | DONE | `docs/ADR-001.md` §15 |
+| T-012 | Schema, migrations plan, seed plan | data-model-specialist | DONE | `docs/data-model/` |
+| T-013 | UI specification | ux-ui-designer | DONE (rev 2) | `docs/design/ui-spec.md` |
+| T-014 | API contract | backend-developer | DONE (draft 2) | `docs/api/contract.md` |
+| T-015 | Permissions review, security plan, threat model | security-reviewer | DONE | `docs/plan/permissions-matrix.md` (REVIEWED), `docs/security/` |
+| T-016 | Architecture consistency review | software-architect | DONE (Ready with conditions) | `docs/plan/consistency-review.md` |
+| T-017 | Planning-phase tests | qa-tester | DONE (GO) | `spikes/schema-check/`, `docs/qa/` |
+| T-008 | ADR-002 hosting & deploy pipeline | software-architect + devops-engineer | TODO | Required before any deploy |
+| T-009 | ADR-003 auth, sessions, CSRF/form model | software-architect + security-reviewer | TODO | Required before auth work (batch B1) |
+| T-018 | Hosted PoC on the user's Netlify Free account | devops-engineer | BLOCKED (user account check + go-ahead) | PoC report §6 checklist |
+| T-019 | Product confirmations (P-1, P-2, reopen/contain rows, notes after ship, US-012, severity wording) | product-manager + user | TODO | See consistency-review open items |
+| T-020 | KPI method choices (KPI-7 headline, KPI-3 anchor, FPY with customer errors, P90, payload shapes) | dashboard-analytics-developer | TODO | Required before batch B5 |
 
-## Decisions waiting on the user
-1. Accept ADR-001 (Option C) or choose another option.
-2. Approve the `docs/project-scope.md` changes in ADR-001 §11.1. They move PostgreSQL and Netlify
-   hosting into v1 and add acceptance criterion 10.
-3. Netlify plan: stay on Free (300 credits/month, hard stop) and accept the Personal plan as a
-   contingency only if usage monitoring shows the risk?
-4. Confirm that the GitHub repo will be public, or deployed from a personal account (Free plan
-   limitation).
-5. Backlog Q-05 (verifier ≠ packer with one seeded user per role), Q-07 (fixed "as of" date for the
-   demo dashboard) and Q-11 (permission matrix). Priya's proposed answers are in backlog §9.
+## Latest verification (2026-11-26, re-run by orchestrator)
+| Check | Result |
+|-------|--------|
+| `python3 .claude/skills/validate-agent-team/validate.py` | PASS, 0 warnings (12 agents, 19 skills) |
+| `claude plugin validate .claude/agents` | Validation passed |
+| Schema harness `spikes/schema-check` (`npm test`) | 82/82 passed |
+| PoC `spikes/poc-astro-netlify-db` (`npm test`) | 17/17 passed |
+| PoC `npx astro check` | 0 errors |
+| PoC `npm audit --audit-level=high` | exit 0 (10 moderate, accepted and tracked) |
 
 ## Phase log
-- **2026-11-25 Phase 0 & 1 (planning):** T-001 and T-002 ran in parallel. Hand-offs reviewed for
-  consistency: the backlog stays technology-neutral, and its blocking question Q-01 is the same
-  issue ADR-001 resolves. ADR scoring arithmetic was checked. The ADR claims it could not verify are
-  marked [A] and are covered by the spike (T-007).
+- **2026-11-25 Phase 0–1:** backlog and ADR-001; user conditionally approved ADR-001 with Free-plan
+  and no-purchase conditions.
+- **2026-11-25 Phase 1 follow-up:** scope updated; V1-CORE defined; agents/skills aligned; local
+  PoC passed.
+- **2026-11-25/26 Phase 2:** interrupted by the usage limit; resumed without repeating finished work.
+  Schema, API contract, UI spec and security plan completed and reconciled (18 decisions in
+  consistency-review.md); schema harness 82/82.

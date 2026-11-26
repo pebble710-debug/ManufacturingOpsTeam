@@ -93,6 +93,8 @@ python3 .claude/skills/validate-agent-team/validate.py
 - `knowledge/` — one folder per agent
 
 ## Status
-**Phase 1 complete pending PoC; Phase 2 design in progress.** ADR-001 (`docs/ADR-001.md`) is
-accepted conditionally on the §12.1 proof of concept; no full application implementation until
-the PoC passes and the user gives the go-ahead. Plan and task status: `docs/plan/status.md`.
+**Phase 2 design and local technical verification complete (2026-11-26); waiting for the user's
+review and go-ahead before full implementation.** ADR-001 (`docs/ADR-001.md`) is accepted
+conditionally; the local PoC passed, while hosted Netlify verification awaits the user's account
+check. Architecture verdict: Ready with conditions (`docs/plan/consistency-review.md`). Plan and
+task status: `docs/plan/status.md`.
