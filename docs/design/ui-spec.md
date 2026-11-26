@@ -1,6 +1,7 @@
 # UI Specification — Version 1 Core
 
-**Task:** T-013 · **Owner:** Maya (ux-ui-designer) · **Date:** 2026-11-25 · **Status:** DRAFT for Felix (front end), Kenji (dashboard), Diego (API), Dana (data), Quinn (QA), Sasha (security) review
+**Task:** T-013 · **Owner:** Maya (ux-ui-designer) · **Date:** 2026-11-25 (revision 2: 2026-11-26) · **Status:** REVISION 2, ready for Felix (front end), Kenji (dashboard), Diego (API), Dana (data), Quinn (QA) review; aligned with the final [permissions matrix](../plan/permissions-matrix.md) (Sasha-reviewed) and [security plan](../security/security-plan.md); API wording checked against [api/contract.md](../api/contract.md)
+**Revision 2 changes:** Viewer kept and seeded (read-only guest); Admin never sees operational actions (R-2); R-4 adopted (S19, S18); R-7 covers scrap and limits Quality to Hold moves (S16); Shipping cannot cancel from On Hold (R-5); demo reset cooldown, 404 when off, sessions ended (S23); unpublished deployed Admin password (S01); session timeout, 429 and generic error UX (new section 2.6, S01, S26); CSP-friendly front-end rules (new section 10.1); Rework gate applies to "Start packing again" (4.10, S05, S06); section 14 shows which questions are answered.
 **Scope contract:** [project-scope.md](../project-scope.md) (V1-CORE, 11 acceptance criteria). **Stories:** [plan/backlog.md](../plan/backlog.md) §3.1 (authoritative release index). **Roles:** [plan/permissions-matrix.md](../plan/permissions-matrix.md). **Stack:** [ADR-001](../ADR-001.md) (Astro server-rendered pages, plain CSS with tokens, HTML forms with POST, progressive enhancement only, Chart.js bundled).
 **Tags:** [R] researched, [A] assumption, [P] proposed (project convention). All names, parts, lots and values in wireframes are **fictional** and illustrative; KPI numbers in wireframes are not seed values.
 
@@ -106,27 +107,54 @@ Y = item shown. A menu item is shown when the role can open at least the read vi
 |---------------|----------|----------------------------------------|
 | New shipment, Edit shipment | Shipping, Supervisor | none (hidden for others) |
 | Mark Ready to Pack, Start Packing | Shipping, Supervisor | none |
-| Mark Verified / Fail verification | Shipping, Quality, Supervisor | **the current packer** (identity rule R-1) |
+| Mark Verified / Fail verification | Shipping, Quality, Supervisor | **the current packer** (identity rule R-1, including a Supervisor or Quality user who packed) |
 | Ship | Shipping, Supervisor | same roles when status is not Verified (state) |
 | Put On Hold | Shipping, Quality, Supervisor | none |
-| Release from hold | Quality, Supervisor | Shipping (sees "Only Quality or Supervisor can release") |
-| Cancel shipment | Supervisor; Shipping while Planned or Ready to Pack | Shipping in later statuses (sees hint, R-5) |
-| Log packaging error | Shipping (before ship), Quality, Supervisor | Shipping on a Shipped shipment (sees hint, R-8) |
+| Release from hold | Quality, Supervisor | Shipping (sees "Only Quality or Supervisor can release", R-6) |
+| Cancel shipment | Supervisor (any status before Shipped); Shipping only while Planned or Ready to Pack | Shipping in later statuses **including On Hold** (sees hint, R-5; server answers 403, not 409) |
+| Log packaging error | Shipping (before ship only), Quality, Supervisor | Shipping on a Shipped shipment (sees hint, R-8) |
 | Log rework | Shipping, Quality, Supervisor | none |
 | Root cause, corrective action, close error | Quality, Supervisor | none |
 | Receive material | Receiving, Supervisor | none |
-| Move stock out of a Hold location | Quality, Supervisor | Receiving (sees hint, R-7) |
+| Transfer, scrap, production complete (stock not in a Hold location) | Receiving, Supervisor | none |
+| Transfer or scrap into or out of a Hold location | Quality, Supervisor | Receiving (sees hint, R-7; decided by the source location type) |
+| Production complete | Receiving, Supervisor | none (not offered to Quality) |
 | Create count list | Supervisor | none |
 | Enter counts | Receiving, Supervisor | none |
-| Approve count | Supervisor | none; and the person who entered the count if R-4 is adopted |
-| Targets | Admin, Supervisor | none |
-| Reporting date, demo reset | Admin | Supervisor sees the reporting date as read-only text |
+| Approve count | Supervisor | **a Supervisor who entered or recounted any line of that count** (R-4, `APPROVER_SAME_AS_COUNTER`) |
+| Targets, lookups | Admin, Supervisor | none |
+| Reporting date, demo reset | Admin | Supervisor sees the reporting date as read-only text; no reset section |
+| Audit log, users (screen later) | Admin | none (hidden) |
 
-Admin is not an operator (R-2): on operational screens an Admin sees read-only content and a one-line note ("You are signed in as Admin. Admins manage settings and cannot pack, verify, ship or post stock.").
+Admin and Viewer have **no operational actions** (R-2, matrix section 4): on operational screens they see read-only content and the one-line note defined directly below.
+
+**Read-only roles (Admin, Viewer).** Neither role has any operational action (R-2; Viewer is the read-only guest and the recommended login for visitors to the public site). On every operational screen they see the same content as other roles with **no action buttons and no forms**, plus one line under the page title:
+- Viewer: `You are signed in as Viewer, a read-only guest. You can look at everything but can't change anything.`
+- Admin: `You are signed in as Admin. Admins manage settings and users and can't pack, verify, ship, count or post stock (separation of duties).`
+The server still returns 403 for every write (T-6, T-10). Viewer sees no Admin menu group.
+
+**Seeded accounts, one role each (R-11).** Menu and actions never combine roles; the role label in the top bar is the only role the user has.
 
 ### 2.5 After login
 
 All roles land on the dashboard. The top bar shows display name and role (US-001). No role-specific home in v1 core.
+
+### 2.6 Session, sign-in limits and generic errors (security plan §3.2, §3.3, §8.3)
+
+| Situation | What the user sees | Notes |
+|-----------|--------------------|-------|
+| Idle 30 min or session older than 8 h, then any request | Redirect to `/login` with an info alert: `You were signed out because the session expired. Sign in again to continue.` After sign-in the user returns to the page they asked for (GET pages only; a lost form is not replayed) | Alert `role="status"`. Wording is the same for idle and absolute expiry (no need to explain which). |
+| Form submitted after expiry | Same redirect and message plus: `Your last change was not saved.` | Never silently drop; the POST is not retried. Entered values are not kept (security over convenience, 3.3.7 exception: authentication timeout). |
+| Too many failed sign-ins (429) | On `/login`: `Too many sign-in attempts. Wait 15 minutes and try again, or use another demo account.` The form stays usable (no lockout) | Generic: does not say which username or whether it exists; same layout as the normal error; no countdown timer. `Retry-After` is not shown as a clock. |
+| Wrong username or password, unknown or deactivated user | `Username or password is incorrect.` | One message for every case (US-001, security plan §3.1). |
+| Role changed or user deactivated while signed in | Next request redirects to `/login` with the session-expired message | Ends sessions immediately (R-11). |
+| Demo reset by Admin (R-9) | Everyone, including the Admin, is signed out; next request shows `/login` with `The demo data was reset. Sign in again.` | Public visitors see this when an Admin resets; it is expected. |
+| Server error (500) / DB waking (503) | Generic page (S26) with an error id | No stack, SQL, table or constraint names. Fail closed. |
+| Missing CSRF token or forged origin (403 `CSRF_INVALID`) | Problem alert: `We couldn't verify that request. Reload the page and try again.` | Typical cause is a stale tab after expiry. |
+| Wrong content type (415) | Not reachable from the UI (forms are urlencoded) | Tested by QA only. |
+
+Session UX rules: no countdown banners and no auto-logout popups in v1. The 30 min idle limit is stated on the login page footer (`For security, sessions end after 30 minutes without activity.`) and the user returns to the same page after signing in. Sign-out is a POST button, never a link (R-13).
+**WCAG 2.2.1 (Timing Adjustable) note:** a timeout under 20 h normally needs a warning and a way to extend. I treat the security idle timeout as the "essential" exception and mitigate it with the statement above and the return-to-page behaviour; an optional "Your session ends in 2 minutes. [ Stay signed in ]" prompt (external script, no inline code) is listed as open question 14.21 for Sasha and Quinn rather than built by default.
 
 ---
 
@@ -487,9 +515,11 @@ Shown on shipment detail when status is Rework (and again on Pack & Verify) so t
 Before SH-1042 can ship again
  [x] 1. Packaging error logged          PE-0107 (Paperwork, Major)
  [x] 2. Rework completed                Reprint paperwork, 22 min
- [ ] 3. Packed again                    Start packing again (a new packer is recorded)
+ [ ] 3. Packed again                    [ Start packing again ] (a new packer is recorded)
  [ ] 4. Verified again by a different person
 ```
+
+Per the API contract (E-16, `REWORK_GATE_NOT_MET`) steps 1 and 2 gate **Start packing again** itself, not only the re-verification: until both are done, that button is shown **unavailable** with the missing step named (pattern 4.8; messages `E-GATE-1`, `E-GATE-2`). Steps 3 and 4 follow in order.
 
 Each line has text status ("Done" / "Not done") in addition to the box glyph, which is `aria-hidden`; the list is an ordered list `<ol>`.
 
@@ -546,24 +576,30 @@ Shared template for all form screens: breadcrumb, `<h1>`, flash alert, optional 
 |                                                                                  |
 |  +-------------------------------------------+                                   |
 |  | <h1> Sign in                              |                                   |
-|  | [!] Problem: Sign in failed. Check your   |  (1) generic, role="alert"        |
-|  |     username and password and try again.  |                                   |
+|  | [i] Note: You were signed out because the |  (5) expiry, role="status"        |
+|  |     session expired. Sign in again.       |                                   |
+|  | [!] Problem: Username or password is      |  (1) generic, role="alert"        |
+|  |     incorrect.   (429: Too many sign-in   |  (6) rate limit, same layout      |
+|  |     attempts. Wait 15 minutes ...)        |                                   |
 |  | Username (required)                       |                                   |
 |  | [ demo.shipper1__________________ ]       |  (2) autocomplete="username"      |
 |  | Password (required)                       |                                   |
 |  | [ ************ ]  [ ] Show password        |  (3) autocomplete=current-password|
 |  | [ Sign in ]                               |                                   |
 |  +-------------------------------------------+                                   |
-|  > Demo accounts (fictional, demo-only)                       (4) <details>      |
+|  [i] Just looking around? Sign in as demo.viewer (read-only guest).     (4)      |
+|  > Demo accounts (fictional, demo-only)                       <details>          |
 |    Username        Role        Good for                                          |
+|    demo.viewer     Viewer      Read-only guest: look at everything, change nothing|
 |    demo.shipper1   Shipping    Packing a shipment                                |
 |    demo.shipper2   Shipping    Verifying a shipment packed by shipper1           |
 |    demo.quality    Quality     Verifying, holds, root cause                      |
 |    demo.supervisor Supervisor  Approvals, cancel, verify                         |
 |    demo.receiver   Receiving   Receipts, transfers, counts                       |
 |    demo.admin      Admin       Settings, reporting date, audit, demo reset       |
-|    demo.viewer     Viewer      Read-only guest                                   |
-|    Passwords are demo-only and listed in the README. Never reuse them.            |
+|    Demo passwords: see the README (demo-only, never reuse them).                 |
+|    demo.admin: sign-in is not published on this site.                       (7)  |
+|  For security, sessions end after 30 minutes without activity.                   |
 +--------------------------------------------------------------------------------+
 ```
 
@@ -571,7 +607,10 @@ Annotations
 1. One generic message for wrong password, unknown user and deactivated user (US-001); never says which. Signed-out redirects show "Please sign in to continue." above the form.
 2. Field names/labels: "Username", "Password". No placeholder text.
 3. "Show password" is a progressive-enhancement checkbox; paste is allowed (WCAG 3.3.8 accessible authentication: no memory test, no CAPTCHA, password managers work).
-4. Demo accounts table helps the presenter and explains the verifier rule; whether the passwords themselves are printed on the public page is **Sasha's decision** (Q-19, open question 14.10); default here is "see README".
+4. **Viewer is the recommended visitor login** and is named first. The demo accounts table helps the presenter and explains the verifier rule (shipper1 packs, shipper2 verifies). The published demo-only passwords for Viewer, Shipping, Receiving, Quality and Supervisor are shown on this page or linked to the README (matrix section 4, security plan PD-2); either is acceptable to the design, Felix follows what Theo/Diego decide.
+5. Session-expiry message (2.6) appears above the form when the user was redirected for expiry, reset or role change.
+6. **429**: `Too many sign-in attempts. Wait 15 minutes and try again, or use another demo account.` There is **no account lockout** (security plan §3.3), so the form stays enabled; the message never says which username was limited. Same status wording is used even for correct credentials while limited.
+7. **Admin password is not published** on the deployed site (R-9, PD-2). The row says so in plain text. If the deployed Admin account is inactive, signing in as `demo.admin` shows the same generic "Username or password is incorrect." message (no hint that the account is inactive). Locally the documented demo password works.
 
 Accessibility: `<h1>` is "Sign in"; error is `role="alert"` and focus goes to it on re-render; the DEMO banner precedes everything; page `<title>` "Sign in | Cobalt Ridge Ops (DEMO)". Responsive: single centered card, max 28 rem, works at 768 px and wider; the demo table scrolls inside its `<details>` region only if needed.
 
@@ -766,7 +805,7 @@ Status action matrix (what the Next step box offers)
 | Ready to Pack | `Start packing (you become the packer)` (Shipping, Supervisor) | Edit; Hold; Cancel |
 | Packing | `Open Pack & Verify` (everyone sees it; verify availability is on S06) | Edit; Log packaging error; Hold; Cancel (Supervisor only) |
 | Verified | `Ship SH-1042` (Shipping, Supervisor) | Edit (warns); Hold; Cancel (Supervisor) |
-| Rework | next unmet step from the gate checklist: `Log packaging error`, `Log rework`, or `Start packing again` | Hold; Cancel (Supervisor) |
+| Rework | next unmet step from the gate checklist: `Log packaging error`, `Log rework`, or `Start packing again` (Shipping, Supervisor; unavailable with reason until error and rework are done) | Hold; Cancel (Supervisor) |
 | On Hold | `Release from hold` (Quality, Supervisor) | Cancel (Supervisor); shows hold reason and owning department |
 | Shipped | none | `Log customer-found error` (Quality, Supervisor) |
 | Cancelled | none | read-only, shows cancel note |
@@ -894,7 +933,8 @@ Release SH-1042 from hold                       Hold reason: Quality hold - Owne
 Releasing returns the shipment to Packing (its status before the hold).
 Note (optional) [ ........ ]        [ Release SH-1042 ]   Back
    -------------------------------------------------------------------------------------------
-Cancel SH-1042                                     [!] Cancelling can't be undone.
+Cancel SH-1042  (Shipping: only Planned or Ready to Pack; Supervisor: any status before Shipped)
+                                                   [!] Cancelling can't be undone.
 Cancelled shipments are read-only and leave all KPIs and charts.
 Reason (required)  [ ....................... ]
 Confirm: [ ] I understand SH-1042 will be cancelled.                                      (2)
@@ -902,7 +942,7 @@ Confirm: [ ] I understand SH-1042 will be cancelled.                            
 ```
 
 Annotations
-1. "Owning department" values are not defined upstream (open question 14.6).
+1. "Owning department" values (provisional, contract §2): Shipping, Quality, Receiving, Production, Planning, Customer (14.6).
 2. The confirmation checkbox is a plain required checkbox (no modal dialog), keeping the page keyboard- and no-JS-safe.
 3. Role gating: release is hidden from Shipping (hint on S05); cancel for Shipping is only offered in Planned and Ready to Pack (R-5); wrong status or role shows the standard Problem alert.
 
@@ -990,7 +1030,7 @@ Action | Owner | Due | Status |
 
 Annotations
 1. **Close** is Unavailable (reason shown) until at least one rework event is completed for before-ship errors and a root-cause category is set (US-034). Customer-found errors need no rework event.
-2. The "Re-verified" column is read-only text ("Yes", "Not yet"); it is set by the passing re-verification, not typed (open question 14.5).
+2. The "Re-verified" column is read-only text ("Yes", "Not yet"); it is set by the server when the re-verification passes, not typed (contract E-11).
 3. Buttons for Root cause, Add corrective action, Close error appear only for Quality and Supervisor; Log rework for Shipping, Quality, Supervisor.
 4. Overdue corrective actions show the text badge "Overdue".
 
@@ -1014,7 +1054,7 @@ Note (optional)                 [ ....................... ]
 [ Save rework ]    Cancel
 ```
 
-Annotations: (1) A blank end time saves the event as **In progress**; it shows as "In progress" and is not counted in minute totals (US-029). To finish later the user opens the event from S11 ("Complete rework" uses the same form with the end time required). (2) Read-only text; do not offer a checkbox unless Diego decides otherwise (14.5). Rework cannot be created without an error (the page is only reachable from an error). Validation: end earlier than start is rejected inline.
+Annotations: (1) A blank end time saves the event as **In progress**; it shows as "In progress" and is not counted in minute totals (US-029). To finish later the user opens the event from S11 ("Complete rework" uses the same form with the end time required). (2) Read-only text; no checkbox is offered (server-managed, 14.5). Rework cannot be created without an error (the page is only reachable from an error). Validation: end earlier than start is rejected inline.
 
 ---
 
@@ -1069,7 +1109,7 @@ Receive into location           [RCV-01 v]   (Accepted only)
 ```
 
 Annotations
-1. Hint shows a suggested prefix from the reporting date's week (`L2648-`). Whether the format is **enforced** or only seeded is open (14.8).
+1. Hint shows a suggested prefix from the reporting date's week (`L2648-`). The format is a hint only; the server accepts letters, digits and hyphens, 3 to 30 characters, stored upper-case (14.8, contract Q-I).
 2. Under the radios a static "What happens" list (text): **Accepted**: stock is added at the chosen location. **On Hold**: stock is added at HOLD-01 and needs a Quality or Supervisor transfer to release. **Rejected**: no stock is added; the receipt stays visible.
 3. After save: redirect to the receipts list with "Saved: RC-0149, 200 × CRC-3310-A, lot L2648-001, Accepted into RCV-01."
 
@@ -1116,7 +1156,7 @@ Unavailable (Receiving, source is HOLD-01): "Moving stock out of HOLD-01 needs a
 ```
 
 Annotations
-1. Source in a Hold-type location and signed-in role Receiving: form is shown read-only with the Unavailable button and the reason (R-7, T-13). Quality sees the transfer form only for Hold sources, with the note "Quality can move stock out of Hold locations only." [A pending Diego, open question 14.9].
+1. **R-7.** Any transfer **or scrap** whose source is a Hold-type location (HOLD-01) needs Quality or Supervisor; the rule follows the source location's type, not anything the user picks. Receiving who opens a Hold row sees the form read-only with the Unavailable button and the reason `Moving or scrapping stock in a Hold location needs a Quality or Supervisor user.` (T-13, T-19; server 403 `FORBIDDEN_HOLD_RELEASE`). **Quality** sees only Transfer and Scrap, and only for stock in or going into Hold locations, with the note `Quality can move or scrap held stock only.` Production complete is not offered to Quality (server 403 `FORBIDDEN_NON_HOLD_TXN`). Shipping, Admin and Viewer do not see the screen.
 2. A transfer is one atomic action creating two ledger entries; the success message says "Moved 20 of CRC-2041-B (L2611-004) from STK-A01 to FG-01."
 3. The sections of the three types are separate pages states: Type radios submit a GET (`?type=scrap`) to show only the relevant fields, so the page works without JavaScript.
 
@@ -1173,7 +1213,8 @@ Annotations
 1. **No system quantity anywhere** for the counter: not in the page, not hidden in markup, not in the response (US-043). No variance amounts either; only the words "Within tolerance" are never shown to counters, and only "Out of tolerance: count again" is shown.
 2. "Save counts" saves progress (secondary button); "Submit count for approval" is a primary button that is Unavailable with reason ("3 lines still need a count. 1 line needs a recount.") until all lines (and required recounts) are complete; the server decides.
 3. The first counted quantity is kept unchanged (read-only text) when a recount is requested (US-043). Counts accept whole numbers 0 or more; blank is not 0.
-4. Supervisor entering counts sees the same blind page. If rule R-4 is adopted (approver ≠ counter), the S19 page explains it (open question 14.4).
+4. Supervisor entering counts sees the same blind page, with a hint under the title: `If you enter or recount any line, another Supervisor must approve this count.` (R-4 is adopted; it covers recounts too). In the demo, counts are entered by `demo.receiver`, so `demo.supervisor` can approve.
+5. Per the API contract the system quantity is absent from the response for an Open count for **every** role, including Supervisor; the server tells the page only `recount_required`.
 
 Accessibility: each count input has `aria-label` "Counted quantity, CRC-1120-C, HOLD-01, lot L2647-001"; the table uses `inputmode="numeric"`; recount messages are inline and in the summary. Responsive: at 768 px each line becomes a card with the identifiers on top and one large number input (min 56 px high) for gloved use.
 
@@ -1181,7 +1222,7 @@ Accessibility: each count input has `aria-label` "Counted quantity, CRC-1120-C, 
 
 ### S19 Count review and approval
 
-**Route** `/inventory/cycle-counts/{CC-no}` while status Counted · **Roles** Supervisor approves; all others read (system quantities visible only after Counted to Supervisor, and to all roles once Approved [A, open question 14.3]) · **Stories** US-044
+**Route** `/inventory/cycle-counts/{CC-no}` while status Counted · **Roles** Supervisor approves; all others read (system quantities visible on a Counted count only to Supervisor and Admin, and to all roles once Approved, per contract §7.1) · **Stories** US-044
 
 ```
 Count CC-0012 - Class A - scheduled 24 Nov 2026   [Counted]   Entered by: Demo Receiver
@@ -1190,13 +1231,14 @@ Part       | Loc     | Lot       | ABC | System | Counted | Recount | Final | Va
 CRC-2041-B | STK-A01 | L2611-004 | A   | 100    | 96      | 96      | 96    | -4       | [!] Out of tolerance    | [Select adjust reason v]
 CRC-3310-A | STK-A04 | L2640-003 | A   | 130    | 130     | -       | 130   | 0        | [check] Within tolerance| -
 [ Approve count CC-0012 and post 1 adjustment ]    Back to list                                  (2)
-Unavailable (if you entered this count and rule R-4 applies): "You entered this count, so another Supervisor must approve it." (3)
+Unavailable (if you entered or recounted any line, R-4): "You entered this count, so another Supervisor must approve it." (3)
+   The Approve button stays visible but unavailable (pattern 4.8); server answer 403 APPROVER_SAME_AS_COUNTER.
 ```
 
 Annotations
 1. The summary previews effect in words, including the accuracy this count adds (US-053 formula: lines within tolerance ÷ lines counted).
 2. Approving is explicit and irreversible: one adjustment per line with a variance, using the chosen adjust reason (required for each variance line). Repeating approval posts nothing again (US-044); the page for an Approved count shows no button and the text "Approved by Demo Supervisor on 25 Nov 2026 14:02. Adjustments posted."
-3. R-4 is **proposed, not decided**; design accommodates the same Unavailable pattern.
+3. **R-4 is adopted** (permissions matrix, test T-15): a Supervisor who entered or recounted any line cannot approve. The page shows who entered the count ("Entered by: Demo Receiver") and, when the viewer is the counter, the Unavailable button with the reason. The contract names the code `APPROVER_ENTERED_COUNT`; the matrix names it `APPROVER_SAME_AS_COUNTER` (open question 14.22).
 4. Non-Supervisors see this page read-only with "Only a Supervisor can approve counts."
 
 Accessibility: tolerance result is text with icon; variance has explicit sign ("-4", "+2") and units; table has caption. Responsive: P3 columns (ABC, Counted, Recount) collapse into the Final cell as small text at 768 px.
@@ -1306,7 +1348,13 @@ Type RESET DEMO to confirm (required)   [ ____________ ]
 [ Reset demo data ] (danger)     Cancel
 ```
 
-Annotations: the typed phrase is compared on the server; mismatch shows "Type RESET DEMO exactly to confirm." After success: redirect to the dashboard with "Saved: demo data was reset to the original seed." If the action takes long, the page explains "This can take up to a minute. Don't close the page." (static text; no spinner required). When disabled the route returns 404 for everyone except showing a Note to Admin ("Demo reset is turned off on this site."). Other roles: 403.
+Annotations (R-9, security plan PD-3)
+1. The typed phrase is compared on the server; mismatch shows "Type RESET DEMO exactly to confirm." The page also lists consequences in plain words: `All records are rebuilt from the original seed. Demo users and their passwords are recreated. Everyone, including you, is signed out.`
+2. **Cooldown:** at most one reset per 10 minutes. A second attempt shows (429): `A reset ran less than 10 minutes ago. Wait and try again.` (no countdown clock).
+3. **Success:** all sessions end, so the user lands on `/login` with `The demo data was reset. Sign in again.` (no dashboard redirect).
+4. If the action takes long the page explains "This can take up to a minute. Don't close the page." (static text).
+5. **Flag off:** the endpoint returns 404; the Settings section then shows only "Demo reset is turned off on this site." to Admin and nothing to others. Other roles hitting the URL: 403 (when on) or 404 (when off).
+6. Deployed `demo.admin` is the only Admin and its password is a Netlify secret that visitors do not know, so on the public site visitors never see this screen.
 
 ---
 
@@ -1356,10 +1404,12 @@ Annotations: (1) The page states the time basis, because the business clock is f
 | Page | Heading | Body | Actions |
 |------|---------|------|---------|
 | 401 on a page | (redirect to S01) | "Please sign in to continue." | Sign in |
-| 403 | You don't have permission to do that | "Your role (Shipping) can't {action}. If you think this is a mistake, ask a Supervisor." | Back to dashboard |
+| 403 | You don't have permission to do that | "Your role (Shipping) can't {action}. If you think this is a mistake, ask a Supervisor." Identity refusals (verifier = packer, approver = counter) use their own in-place Problem alert instead (7.2), not this page. | Back to dashboard |
 | 404 | We can't find that page | "The shipment or page may not exist. Check the number and try again." | Go to Shipments, Dashboard |
 | 409 (in place) | Problem alert on the same page | State reason in plain words (7.2) | link to the correct next step |
-| 500 | Something went wrong on our side | "Your changes were not saved. Try again. If it keeps happening, tell your Supervisor. Reference: 7F3A91." | Try again, Dashboard |
+| 500 / 503 | Something went wrong on our side | "Your changes were not saved. Try again. If it keeps happening, tell your Supervisor. Reference: 7F3A91." For 503 (database waking): "The system is starting up. Wait a few seconds and try again." | Try again, Dashboard |
+| 429 (reset) | Problem alert in place (S23) | cooldown text | none |
+| Session expired | (redirect to S01) | see 2.6 | Sign in |
 
 All system pages keep the DEMO banner, top bar and navigation. No stack traces or internal error text (US-075).
 
@@ -1408,8 +1458,8 @@ General rules: say what is wrong and how to fix it; use the field's label words;
 | `E-VER-5` | Mark Verified pressed with a Fail (422) | `You marked item 6 as Fail, so this shipment can't be marked Verified. Use "Fail verification and send to Rework", or change the answer.` |
 | `E-VER-6` | Fail pressed with no Fail (422) | `No item is marked Fail. Mark the item that failed, or choose "Mark Verified" if every item passes.` |
 | `E-VER-7` | Status not Packing (409) | `SH-1042 is Verified, not Packing, so it can't be verified now.` |
-| `E-GATE-1` | Re-verify, no error logged (409) | `Can't verify again yet: no packaging error is logged for the failed verification. Log the error first.` |
-| `E-GATE-2` | Re-verify, rework not completed (409) | `Can't verify again yet: no rework is completed for PE-0107. Log and complete the rework first.` |
+| `E-GATE-1` | Start packing again or re-verify, no error logged (409 `REWORK_GATE_NOT_MET`) | `Can't continue yet: no packaging error is logged for the failed verification. Log the error first.` |
+| `E-GATE-2` | Start packing again or re-verify, rework not completed (409 `REWORK_GATE_NOT_MET`) | `Can't continue yet: no rework is completed for PE-0107. Log and complete the rework first.` |
 | `E-GATE-3` | Ship while Rework/Packing (409) | `SH-1042 can't ship: it is in Rework. It needs a logged error, completed rework, and a passing re-verification.` |
 | Info (State B) | Packer opens page | `You packed this shipment, so someone else must verify it.` |
 | Button reason | packer | `Unavailable to you: you are the packer of SH-1042. The server also refuses this, even if the page is bypassed.` |
@@ -1436,7 +1486,7 @@ General rules: say what is wrong and how to fix it; use the field's label words;
 | Hold reason missing | `Select a hold reason.` |
 | Cancel reason missing | `Enter a reason for cancelling SH-1042.` |
 | Cancel not confirmed | `Tick the box to confirm you want to cancel SH-1042.` |
-| Shipping cancel too late (403) | `Shipping can cancel only Planned or Ready to Pack shipments. Ask a Supervisor to cancel SH-1042.` |
+| Shipping cancel too late, including On Hold (403 `FORBIDDEN_CANCEL_AT_STATUS`) | `Shipping can cancel only Planned or Ready to Pack shipments. Ask a Supervisor to cancel SH-1042.` |
 | Release not allowed (403) | `Only Quality or Supervisor can release a hold.` |
 
 **F4 Error (S10), F5 Rework (S12), F6 Corrective action (S13)**
@@ -1460,7 +1510,7 @@ General rules: say what is wrong and how to fix it; use the field's label words;
 |-----------|---------|
 | Quantity | `Enter a quantity greater than 0.` |
 | Lot missing | `Enter the lot number. Example: L2611-004.` |
-| Lot format (if enforced) | `Lot numbers look like L2611-004: L, two-digit year, two-digit week, hyphen, three digits.` |
+| Lot format (contract Q-I: letters, digits, hyphens, 3 to 30 characters, stored upper-case) | `Lot numbers use letters, digits and hyphens, 3 to 30 characters. Example: L2611-004.` The seed pattern `L<yy><ww>-<nnn>` is only a hint on the form, not enforced. |
 | Transfer too much | `Only 60 available at STK-A01 for lot L2611-004. Enter 60 or less.` |
 | Same location | `Choose a different destination from the source location STK-A01.` |
 | Scrap reason | `Select a scrap reason.` |
@@ -1477,7 +1527,7 @@ General rules: say what is wrong and how to fix it; use the field's label words;
 | Approve, adjust reason missing | `Select an adjust reason for CRC-2041-B at STK-A01.` |
 | Already approved (409) | `CC-0012 is already approved. No new adjustments were posted.` |
 | Approve by non-Supervisor (403) | `Only a Supervisor can approve counts.` |
-| Same person (if R-4) (403) | `You entered this count, so another Supervisor must approve it.` |
+| Approver entered or recounted a line (R-4, 403) | `You entered this count, so another Supervisor must approve it.` |
 
 **Settings and lookups (S22, S24)**
 
@@ -1490,7 +1540,7 @@ General rules: say what is wrong and how to fix it; use the field's label words;
 | Duplicate | `A part with number CRC-2041 already exists. Part numbers must be unique.` |
 | Reset phrase | `Type RESET DEMO exactly to confirm.` |
 
-**Login (S01)**: `Sign in failed. Check your username and password and try again.` (one message for every failure, including deactivated users).
+**Login (S01)**: `Username or password is incorrect.` (one message for every failure, including unknown and deactivated users and an inactive deployed Admin). Rate limited (429): `Too many sign-in attempts. Wait 15 minutes and try again, or use another demo account.` Expired session: `You were signed out because the session expired. Sign in again to continue.` After a demo reset: `The demo data was reset. Sign in again.` Stale CSRF (403): `We couldn't verify that request. Reload the page and try again.`
 
 ---
 
@@ -1584,6 +1634,18 @@ Rules
 
 Chart.js loads only on the dashboard page. No React/Vue. No CDN assets (CSP `default-src 'self'` from ADR-001).
 
+### 10.1 CSP-friendly front-end rules (security plan §7.2, §8.1)
+
+The policy is `script-src 'self'; style-src 'self'` with **no `unsafe-inline`**, so the design assumes:
+- **No inline scripts and no inline event handlers** (`onclick`, `onchange`). All behaviour (live counters, show-password, late-reason notice, hide/show notes, unavailable-button focus, wall view) lives in small external script files loaded by `<script src>`; Chart.js only on the dashboard.
+- **No `style="..."` attributes and no `<style>` blocks** in markup. Spacing, widths, the tile grid, "visually hidden" text, hidden/shown states and chart container heights use classes from the one token stylesheet (`.is-hidden`, `.visually-hidden`, `.view-wall`). Progress or percentage bars, if ever needed, use `<progress>`/`<meter>` elements, not inline widths.
+- **Chart data** goes in `data-*` attributes or a `<script type="application/json">` block with `<`, `>`, `&` escaped; never `define:vars` or `set:html` with data. Chart labels are canvas text; tooltips are text only. Chart.js sets canvas size via the DOM API (allowed) [A: verify in Playwright with `securitypolicyviolation` listener].
+- **Icons** are inline `<svg>` elements or one SVG sprite from the same origin (`<use href>`), colored via `currentColor` (no `style`). No icon fonts from CDNs, no web fonts (system font stack, section 3.2). Images only `'self'` or `data:`.
+- **`autofocus`, `<details>`, `aria-*`, native form controls** are CSP-neutral and are the default tools. Nothing relies on `eval`, `innerHTML` or `document.write`.
+- **Forms** post to `'self'` only (`form-action 'self'`). Every POST form includes the CSRF token as a hidden field; sign-out and reset are POST forms, never links.
+- Without JavaScript every flow still works (section 10 table), so a blocked or failed script never blocks an action.
+- QA: the axe run and the keyboard pass also listen for CSP violations (security plan S-21); a violation fails the page.
+
 ---
 
 ## 11. Story coverage matrix
@@ -1630,30 +1692,38 @@ Reserved but **not built** in V1-CORE: C4 late reasons, C5 rework by week, C6 in
 **Felix (front end).** Implement tokens (3.2) as one CSS file; build the components in section 4 first (`AppShell`, `DemoBanner`, `ReportingDate`, `StatusBadge`, `DataTable`, `FormField`, `ErrorSummary`, `Alert`, `Button`, `GateChecklist`, `ActionPanel`). Every form: POST + CSRF token + 422 re-render with values + redirect-after-post. Do not add client-side-only rules; the UI explains, the server enforces. Stable test hooks: `data-testid` on `verify-pass-button`, `verify-fail-button`, `verify-unavailable-reason`, `ship-button`, `reporting-date-label`, `demo-banner`, `kpi-tile-{key}`, `chart-{c1|c2|c3}`, `error-summary`.
 **Kenji (dashboard).** You supply tile values, target, previous value, better/worse flag, null state, "How is this calculated?" text and one summary sentence per chart (examples in S02). Chart.js options: fonts ≥ 14 px, animation off under reduced motion, palette in 3.2, dual axes titled, data-table rows from the same payload. Chart marks click-through is optional; the visible links under each chart are required.
 **Diego (API).** Messages `E-VER-1..7`, `E-GATE-1..3` need distinct error codes; 403 for role/identity, 409 for state; server validation messages follow 7.
-**Sasha.** Items for review: demo password display (14.10), reset phrase (S23), server-only blind-count data (S18), R-4, Admin read-only behaviour.
+**Sasha.** Items for review: session and 429 UX (2.6), reset UX (S23), CSP rules (10.1), blind-count display (S18), Admin and Viewer read-only behaviour (2.4).
 
 ---
 
 ## 14. Open questions
 
-| # | Question | Owner |
-|---|----------|-------|
-| 14.1 | **Business clock and time zone.** Which time zone do times display in (UTC vs plant local), and are all "now" defaults (arrival, started, detected) reporting-date + real time of day as in scope §3.4? The spec labels audit times UTC and shows 24 h times elsewhere without a zone suffix. | Diego, Kenji, Marcus |
-| 14.2 | **Period and previous period when fixed.** Confirm default period = the 30 days ending on the reporting date inclusive (27 Oct–25 Nov 2026) and previous = the 30 days before (27 Sep–26 Oct). The label and range text depend on the exact definition. | Kenji |
-| 14.3 | **Who may see system quantities in cycle counts?** Proposed: only Supervisor on Counted counts, and all roles once Approved; counters and everyone else never see them while Open. Confirm, including "absent from the response for this role". | Diego, Sasha |
-| 14.4 | **R-4 approver ≠ counter**: adopted or not (affects S19 Unavailable state). | Sasha, Priya |
-| 14.5 | **`reverified_ok` on rework**: set automatically by the passing re-verification (design assumption) or typed by the user? Also confirm whether "Start packing again" (Rework to Packing) is gated on a logged error and completed rework, or only the re-verification is gated (US-030 text implies the latter). | Diego |
-| 14.6 | **Hold "owning department"**: list of values and where it is stored (US-016 says it is recorded; the data model only has `hold_reason_id`). | Dana, Diego |
-| 14.7 | **Corrective action owner and due date required?** UI makes them required; data model allows empty. Confirm. | Priya, Dana |
-| 14.8 | **Lot number format** `L<yy><ww>-<nnn>`: enforced on entry (validation message and suggested prefix) or only seeded? Also max length and allowed characters for tracking numbers (40 assumed). | Diego, Dana |
-| 14.9 | **F8 for Quality**: which transaction types and sources does Quality have (design assumes Transfer out of Hold-type locations only)? Is Receiving's scrap from Hold allowed? | Diego |
-| 14.10 | **Demo passwords on the public login page**: print them, link the README, or per-environment provisioning (matrix Q-19)? Also whether Viewer is kept. | Sasha, Priya |
-| 14.11 | **KPI module payload** for tiles: per-tile `value`, `target`, `comparator`, `previousValue`, `betterWhen`, `status`, `definitionHtml`, null handling; chart payload plus the summary sentences. Kenji to confirm the shape so the UI never computes KPIs. | Kenji |
-| 14.12 | **C1 axis**: start at 50 % (readable weekly variation) or at 0 %? Spec proposes 50 % with an explicit axis title. | Kenji |
-| 14.13 | **Severity definitions** (Minor/Major/Critical) are not in docs/02; proposed wording in S10 needs confirmation. | Priya, Quinn |
-| 14.14 | **Packaging-instruction display**: US-019 shows "reference and revision of each part"; confirm the source fields (`packaging_instruction_ref` plus revision) since `part` has a single revision. | Dana |
-| 14.15 | **Verification-mistake copy for Supervisor/Quality as packer**: confirm the packer is determined by "current packer" (last Start packing user) for all roles, matching T-4 and T-5. | Diego |
-| 14.16 | **Ship-date rule**: is a ship date after the reporting date rejected (spec assumes yes), and can ship date be before the order date? | Diego |
-| 14.17 | **Chart mark click-through** is in the C1–C3 stories but tile click-through (US-063) is deferred; design provides keyboard-reachable links under each chart. Confirm this satisfies the chart ACs. | Priya, Kenji |
-| 14.18 | **Pagination and sort parameters**: confirm query-string names and that filters keep state on redirects. | Felix, Diego |
+Status as of 2026-11-26. **ANSWERED** = settled by the final permissions matrix, the security plan, or the API contract (Diego's contract is still being finished; items marked "contract" should be re-read when it is final). **OPEN** = still needs a decision.
+
+| # | Question | Status | Answer or owner |
+|---|----------|--------|-----------------|
+| 14.1 | Time zone for displayed times | **ANSWERED** (contract §1.1, Q-20) | Display UTC by default; table headers say "(UTC)". The business-clock anchor for live-entered records is **OPEN**: contract Q-A (blocking) for Marcus, Kenji, Dana, Olivia |
+| 14.2 | Default period and previous period | **ANSWERED** (contract §1.6) | 30 days inclusive ending on the reporting date (27 Oct to 25 Nov 2026). Previous period is the equal-length block before it (27 Sep to 26 Oct); Kenji confirms in the KPI module |
+| 14.3 | Who sees system quantities in cycle counts | **ANSWERED** (contract §7.1) | Never for an Open count, for any role, absent from the response. On a Counted count only Supervisor (and Admin read-only); on an Approved count every role. S18, S19 match |
+| 14.4 | R-4 approver ≠ counter | **ANSWERED** (matrix R-4, T-15) | Adopted, covers any entered or recounted line. S18, S19 updated. Code name differs, see 14.22 |
+| 14.5 | `reverified_ok`; is "Start packing again" gated | **ANSWERED** (contract E-11, E-16) | `reverified_ok` is server-managed; the gate (error logged, rework completed) applies to Start packing again (`REWORK_GATE_NOT_MET`). 4.10, S05, S06 updated |
+| 14.6 | Hold owning-department values | **ANSWERED provisionally** (contract §2 [A]) | Shipping, Quality, Receiving, Production, Planning, Customer. Priya/Dana to confirm (contract Q-I) |
+| 14.7 | Corrective action owner and due date required | **OPEN** | Priya, Dana (UI requires both; schema allows empty) |
+| 14.8 | Lot and tracking formats | **ANSWERED provisionally** (contract Q-I) | Lot: letters, digits, hyphens, 3 to 30, upper-cased; the `L<yy><ww>-<nnn>` pattern is a hint only. Tracking `^[A-Za-z0-9-]{1,40}$`. Messages in 7 updated |
+| 14.9 | F8 for Quality; scrap from Hold | **ANSWERED** (matrix R-7, T-13, T-19) | Receiving 403 for any transfer or scrap out of Hold; Quality limited to transfers and scrap into or out of Hold, not production complete. S16 updated |
+| 14.10 | Demo passwords on the public login page; Viewer kept | **ANSWERED** (matrix section 4, security plan PD-2) | Published demo-only passwords for six accounts (login page or README); `demo.admin` deployed password is a secret and is not published; Viewer kept and recommended. S01 updated |
+| 14.11 | KPI and chart payload shape | **OPEN** | Kenji (contract §9 / Q-P) |
+| 14.12 | C1 axis start at 50 % or 0 % | **OPEN** | Kenji |
+| 14.13 | Severity definitions wording | **OPEN** | Priya, Quinn |
+| 14.14 | Packaging-instruction reference plus revision source fields | **OPEN** | Dana |
+| 14.15 | Packer = current packer for all roles | **ANSWERED** (matrix R-1, T-4, T-5; contract E-16) | Yes; reopen sets the caller as the new packer |
+| 14.16 | Ship-date rule | **PARTLY ANSWERED** (contract §1.6) | No future ship date relative to the business date; ship date before order date still **OPEN** (Diego) |
+| 14.17 | Chart click-through with tile click-through deferred | **OPEN** | Priya, Kenji (design gives keyboard links under each chart) |
+| 14.18 | Query-string names, filter state on redirects | **OPEN** | Felix, Diego |
+| 14.19 | Page forms: urlencoded POST handlers versus `fetch` JSON (contract Q-O). The no-JavaScript design in section 10 needs urlencoded forms with the hidden CSRF field, including add/remove shipment lines | **OPEN** (important) | Marcus, Felix, Diego |
+| 14.20 | Supervisor editing notes on a Shipped or Cancelled shipment (contract Q-G): the UI has no such control yet; if kept, S05 gets a notes form for Supervisor only | **OPEN** | Priya |
+| 14.21 | Optional "session ends in 2 minutes, stay signed in" prompt (WCAG 2.2.1 mitigation, 2.6) | **OPEN** | Sasha, Quinn |
+| 14.22 | Error code name for R-4: matrix says `APPROVER_SAME_AS_COUNTER`, contract says `APPROVER_ENTERED_COUNT`; UI copy does not depend on it but tests do | **OPEN** | Diego |
+| 14.23 | Reset keeps or truncates the audit log (contract Q-M); S23 text says records are rebuilt, audit entry written first | **OPEN** | Sasha, Dana |
+| 14.24 | Exact 429 copy and whether to show `Retry-After` for sign-in (design: fixed "15 minutes" text, no clock) | **OPEN** | Sasha, Diego |
 
