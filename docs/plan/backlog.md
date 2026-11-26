@@ -585,7 +585,7 @@ As a **Shipping associate**, I want status changes only through defined actions,
 - **Priority:** Must · **Size:** L · **Batch:** B2
 - **Depends on:** US-014
 - **Acceptance criteria (Given/When/Then):**
-  - Given the allowed transitions Planned to Ready to Pack, Ready to Pack to Packing, Packing to Verified, Verified to Shipped, Shipped to Delivered (optional), any non-final status to On Hold and back to its prior status, a failed verification or a before-ship error to Rework, Rework to Packing, and any status before Shipped to Cancelled, when a user performs one via its action button, then the status changes and one history entry records from, to, user, UTC time and optional note.
+  - Given the allowed transitions Planned to Ready to Pack, Ready to Pack to Packing, Packing to Verified, Verified to Shipped, any non-final status to On Hold and back to its prior status, a failed verification or a before-ship error to Rework, Rework to Packing, and any status before Shipped to Cancelled, when a user performs one via its action button, then the status changes and one history entry records from, to, user, UTC time and optional note.
   - Given a transition not in the allowed list (for example Planned directly to Shipped, or Cancelled to anything), when attempted through the UI or a direct request, then it is rejected with a clear message (409) and status is unchanged.
   - Given a shipment, when its detail page is opened, then the full status history is shown in time order with user and note.
   - Given a shipment that moves Planned to Ready to Pack, when the history is read, then the first Ready to Pack timestamp is stored for later cycle-time use (never overwritten by later re-entry).

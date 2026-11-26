@@ -128,5 +128,4 @@ Say: "Stock is an append-only ledger. Nothing is edited; every change is a new t
 |---|------|-------|
 | D-1 | seed-plan §5 still lists severity Minor/Major/Critical; remap to Low/Medium/High/Critical (SH-1042 expected High) and remove the "SQ-7 Delivered" remark. | Dana |
 | D-2 | After a reopen, which Shipping user becomes the current packer (the user who re-packs)? Confirm in the contract (US-016 AC). | Marcus, Diego |
-| D-3 | The seed gives shipper1 SH-1288 and shipper2 SH-1287 as demo targets; confirm the roles of verifier and shipper on SH-1287 (packed by shipper2, verified by `demo.quality`) so that `demo.shipper2` may ship it. | Dana |
-| D-4 | Quinn rehearses this script end to end once in Playwright and once by hand before the class. | Quinn |
+| D-3 | Quinn rehearses this script end to end once in Playwright and once by hand before the class. | Quinn |
