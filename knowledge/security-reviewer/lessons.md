@@ -11,3 +11,9 @@
 - npm advisories triage: `npm audit --json` → find the root advisories (`via` objects with a URL) and check
   whether the code is build/dev-only or on the request path. A forced fix that downgrades a major version is
   a reject.
+- 2026-11-27 (T-034): **Middleware must match routes on the same path the framework routes on.** Astro 7 routes on
+  the fully decoded pathname (`validateAndDecodePathname`), but `new URL(request.url).pathname` keeps `%XX` for
+  unreserved chars, so `/admin/audit%2Dlog` skipped the route table (SEC-01). Always test encoded literal segments
+  and require deny-by-default for unmatched GETs, not only writes.
+- Security tests live in `tests/security/` with their own vitest config until CI includes them; write them to
+  assert the secure behaviour (they fail until fixed) rather than `it.fails`.
