@@ -1,0 +1,81 @@
+---
+// S09 Packaging error list. Filters honour the C3 click-through query (?category=...&from=...&to=...).
+import AppLayout from '../../../layouts/AppLayout.astro';
+import PageHeader from '../../../components/PageHeader.astro';
+import FilterBar from '../../../components/FilterBar.astro';
+import FormField from '../../../components/FormField.astro';
+import DataTable from '../../../components/DataTable.astro';
+import Pagination from '../../../components/Pagination.astro';
+import SeverityBadge from '../../../components/SeverityBadge.astro';
+import EmptyState from '../../../components/EmptyState.astro';
+import FormAlerts from '../../../components/shipments/FormAlerts.astro';
+import { appLocals } from '../../../components/locals';
+import { getSql } from '../../../lib/db';
+import { listErrors } from '../../../lib/services/quality';
+import { CATEGORIES, SEVERITIES, STAGES } from '../../../lib/validation/quality';
+import { can, dateTimeText, flash as takeF } from '../../../components/shipments/forms';
+
+export const prerender = false;
+const { user } = appLocals(Astro.locals);
+if (!user) return Astro.redirect('/login?reason=required&next=/quality/errors');
+const sp = Astro.url.searchParams;
+const flash = takeF(Astro);
+const pick = <T extends string>(k: string, allowed: readonly T[]): T[] => sp.getAll(k).flatMap((x) => x.split(',')).filter((x): x is T => (allowed as readonly string[]).includes(x));
+const STATUSES = ['Open', 'Contained', 'Closed'] as const;
+const status = pick('status', STATUSES), category = pick('category', CATEGORIES), severity = pick('severity', SEVERITIES), stage = pick('detected_stage', STAGES);
+const isDate = (s: string | null) => (s && /^\d{4}-\d{2}-\d{2}$/.test(s) ? s : undefined);
+const from = isDate(sp.get('from')), to = isDate(sp.get('to'));
+const shipmentNo = /^SH-\d{4,}$/.test(sp.get('shipment_no') ?? '') ? sp.get('shipment_no')! : undefined;
+const overdue = ['1', 'true', 'on'].includes(sp.get('overdue') ?? '');
+const SORTS: Record<string, string> = { error_no: 'e.error_no', detected_at: 'e.detected_at', severity: 'e.severity', status: 'e.status' };
+const sort = sp.get('sort') && SORTS[sp.get('sort')!] ? sp.get('sort')! : 'detected_at';
+const dir = sp.get('dir') === 'asc' ? 'asc' : sp.get('dir') === 'desc' ? 'desc' : sort === 'detected_at' ? 'desc' : 'asc';
+const pageNo = Math.max(1, Number(sp.get('page')) || 1);
+const PAGE = 25;
+const list = await listErrors(getSql(), {
+  status: status.length ? status : undefined, category: category.length ? category : undefined, severity: severity.length ? severity : undefined,
+  detected_stage: stage.length ? stage : undefined, shipment_no: shipmentNo, from, to, overdue, sortCol: SORTS[sort], desc: dir === 'desc', limit: PAGE, offset: (pageNo - 1) * PAGE,
+});
+const columns = [
+  { key: 'error_no', label: 'Error', sortable: true }, { key: 'shipment', label: 'Shipment' }, { key: 'category', label: 'Category' }, { key: 'status', label: 'Status', sortable: true },
+  { key: 'severity', label: 'Severity', sortable: true, priority: 2 as const }, { key: 'detected_stage', label: 'Stage', priority: 2 as const },
+  { key: 'detected_at', label: 'Detected', sortable: true, priority: 3 as const }, { key: 'rework', label: 'Rework minutes', numeric: true, priority: 3 as const }, { key: 'ca', label: 'Corrective action', priority: 3 as const },
+];
+const opts = (xs: readonly string[]) => xs.map((x) => ({ value: x, label: x }));
+---
+<AppLayout title="Packaging errors" description="Packaging errors, rework and corrective actions.">
+  <PageHeader title="Packaging errors" crumbs={[{ label: 'Dashboard', href: '/dashboard' }, { label: 'Packaging errors' }]}>
+    <Fragment slot="actions">{can(Astro.locals, 'error.log') && <a class="btn btn--primary" href="/quality/errors/new">Log packaging error</a>}</Fragment>
+  </PageHeader>
+  <FormAlerts flash={flash} />
+  <FilterBar label="Filter packaging errors" clearHref="/quality/errors">
+    <FormField id="status" label="Status" type="select" value={status[0] ?? ''} placeholderOption="All" options={opts(STATUSES)} />
+    <FormField id="category" label="Category" type="select" value={category[0] ?? ''} placeholderOption="All" options={opts(CATEGORIES)} />
+    <FormField id="severity" label="Severity" type="select" value={severity[0] ?? ''} placeholderOption="All" options={opts(SEVERITIES)} />
+    <FormField id="detected_stage" label="Stage" type="select" value={stage[0] ?? ''} placeholderOption="All" options={opts(STAGES)} />
+    <FormField id="shipment_no" label="Shipment no." value={shipmentNo ?? ''} hint="For example SH-1042" />
+    <FormField id="from" label="Detected from" type="date" value={from ?? ''} />
+    <FormField id="to" label="Detected to" type="date" value={to ?? ''} />
+    <label class="check"><input type="checkbox" name="overdue" value="1" checked={overdue} /><span>Overdue only (open more than 7 days)</span></label>
+  </FilterBar>
+  <Pagination page={pageNo} total={list.total} pageSize={PAGE} noun="packaging errors" />
+  {list.data.length === 0 ? (
+    <EmptyState title="No packaging errors match these filters" text="Good news, or try widening the date range."><a class="btn btn--secondary" href="/quality/errors">Clear filters</a></EmptyState>
+  ) : (
+    <DataTable caption={`Packaging errors, ${PAGE} per page, sorted by ${sort.replace('_', ' ')}`} columns={columns} sort={sort} dir={dir}>
+      {list.data.map((e: any) => (
+        <tr>
+          <th scope="row" class="cell-id"><a href={`/quality/errors/${e.error_no}`}>{e.error_no}</a></th>
+          <td><a href={`/shipments/${e.shipment.shipment_no}`}>{e.shipment.shipment_no}</a></td>
+          <td>{e.category}{e.paperwork_subtype ? ` - ${e.paperwork_subtype}` : ''}{e.needs_recategorisation ? ' (Needs recategorising)' : ''}</td>
+          <td>{e.status}{e.is_overdue ? ' - Overdue' : ''}</td>
+          <td class="col-p2"><SeverityBadge severity={e.severity} /></td>
+          <td class="col-p2">{e.detected_stage === 'After ship' ? 'After ship (customer-found)' : e.detected_stage}</td>
+          <td class="col-p3">{dateTimeText(e.detected_at)}</td>
+          <td class="col-p3 numeric">{e.rework_minutes_total}</td>
+          <td class="col-p3">{e.corrective_action_status}</td>
+        </tr>
+      ))}
+    </DataTable>
+  )}
+</AppLayout>

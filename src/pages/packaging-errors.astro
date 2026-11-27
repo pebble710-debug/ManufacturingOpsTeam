@@ -1,0 +1,5 @@
+---
+// Dashboard chart links use /packaging-errors?... ; the list lives at /quality/errors (same query string).
+export const prerender = false;
+return Astro.redirect(`/quality/errors${Astro.url.search}`, 302);
+---

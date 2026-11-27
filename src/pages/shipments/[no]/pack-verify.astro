@@ -1,0 +1,114 @@
+---
+// S06 Pack & Verify (F2). States: A verifier can act, B packer (unavailable + reason), C role cannot verify, D status is not Packing.
+import AppLayout from '../../../layouts/AppLayout.astro';
+import PageHeader from '../../../components/PageHeader.astro';
+import StatusBadge from '../../../components/StatusBadge.astro';
+import Alert from '../../../components/Alert.astro';
+import CsrfField from '../../../components/CsrfField.astro';
+import FormField from '../../../components/FormField.astro';
+import FormAlerts from '../../../components/shipments/FormAlerts.astro';
+import { appLocals } from '../../../components/locals';
+import { getSql } from '../../../lib/db';
+import { findShipment, getShipmentDetail } from '../../../lib/repos/shipments';
+import { verifyShipment } from '../../../lib/services/shipments';
+import { verifySchema } from '../../../lib/validation/shipments';
+import { can, dateTimeText, emptyState, flash as takeF, submit, v, type FormState } from '../../../components/shipments/forms';
+
+export const prerender = false;
+const { user } = appLocals(Astro.locals);
+const no = Astro.params.no!;
+if (!user) return Astro.redirect(`/login?reason=required&next=/shipments/${no}/pack-verify`);
+const sql = getSql();
+const row = /^SH-\d{4,}$/.test(no) ? await findShipment(sql, { no }) : undefined;
+if (!row) return Astro.rewrite('/404');
+let state: FormState = emptyState;
+if (Astro.request.method === 'POST' && can(Astro.locals, 'shipment.verify')) {
+  const r = await submit(Astro, {
+    schema: verifySchema, intentField: 'outcome', run: (s, u, input) => verifyShipment(s, u, no, input),
+    redirectTo: `/shipments/${no}`,
+    flash: (s: any) => (s.status === 'Verified' ? `Saved: ${no} is Verified. Next: ship it.` : `Verification failed. ${no} moved to Rework. Log the packaging error next.`),
+  });
+  if ('response' in r) return r.response;
+  state = r.state;
+}
+const s = (await getShipmentDetail(sql, Number(row.id), user))!;
+const flash = takeF(Astro);
+const needCoc = s.lines.some((l: any) => l.part.requires_coc);
+const ITEMS: [string, string, string][] = [
+  ['part_number', 'Part number matches', 'Compare the label, packing slip and parts with each line.'], ['revision', 'Revision matches', 'The revision on the label equals the revision ordered.'],
+  ['quantity', 'Quantity matches', 'Count the parts against the quantity ordered.'], ['lot', 'Lot recorded', 'The lot on the parts is recorded on the paperwork.'],
+  ['labels', 'Labels match', 'Part, quantity and customer on the label are correct.'], ['packing_slip', 'Packing slip matches', 'The packing slip lists what is in the box.'],
+  ...(needCoc ? [['coc', 'C of C present', 'A certificate of conformance is included (a part requires it).'] as [string, string, string]] : []),
+  ['packaging_method', 'Packaging method follows the instruction', 'See the packaging instruction reference for each line.'],
+];
+const isPacker = !!s.packed_by && s.packed_by.id === user.id;
+const mode = s.status !== 'Packing' ? 'D' : !can(Astro.locals, 'shipment.verify') ? 'C' : isPacker || !s.packed_by ? 'B' : 'A';
+const checklistVals = (state.values.checklist ?? {}) as Record<string, string>;
+const reasonB = !s.packed_by ? 'Packing has not been started yet.' : `Unavailable to you: you are the packer of ${no}. The server also refuses this, even if the page is bypassed.`;
+---
+<AppLayout title={`Pack & Verify ${no}`}>
+  <PageHeader title={`Pack & Verify: ${no}`} crumbs={[{ label: 'Shipments', href: '/shipments' }, { label: no, href: `/shipments/${no}` }, { label: 'Pack & Verify' }]}>
+    <Fragment slot="meta"><StatusBadge status={s.status} /></Fragment>
+  </PageHeader>
+  <FormAlerts flash={flash} state={state} />
+  <p>Verifying as: {user.displayName} ({user.role}). Current packer: {s.packed_by ? s.packed_by.display_name : 'none yet'}.</p>
+
+  <section aria-labelledby="chk-lines-h"><h2 id="chk-lines-h" class="section-title">Shipment to check</h2>
+    <div class="table-wrap" tabindex="0" role="region" aria-label="Shipment to check (scrolls sideways on small screens)"><table class="table"><caption class="visually-hidden">Lines to check on {no}</caption>
+      <thead><tr><th scope="col">Line</th><th scope="col">Part</th><th scope="col">Rev</th><th scope="col" class="numeric">Qty</th><th scope="col">Lot</th><th scope="col">Packaging instruction</th></tr></thead>
+      <tbody>{s.lines.map((l: any) => (
+        <tr><th scope="row">{l.line_no}</th><td>{l.part.part_number} {l.part.description}</td><td>{l.part.revision}</td><td class="numeric">{l.qty_ordered}</td><td class="text-mono">{l.lot_number ?? '–'}</td><td>{l.part.packaging_instruction_ref ?? '–'}</td></tr>
+      ))}</tbody></table></div>
+  </section>
+
+  {mode === 'D' && <Alert variant="info" lead="Note:">{no} is {s.status}{s.status === 'Verified' ? ', so no further verification is needed.' : s.status === 'Rework' ? '. After the error and a completed rework are logged, Quality or Supervisor reopens it, then it is packed and verified again.' : '. Verification applies only while it is Packing.'} <a href={`/shipments/${no}`}>Back to shipment</a></Alert>}
+  {mode === 'C' && <Alert variant="info" lead="Note:">Your role ({user.role}) cannot verify shipments. Only Shipping, Quality and Supervisor users can verify.</Alert>}
+  {mode === 'B' && <Alert variant="info" lead="Note:">{!s.packed_by ? 'Packing has not been started. Someone must use Start packing first.' : 'You packed this shipment, so someone else must verify it. A second person checks the work so one mistake cannot pass unnoticed. Ask another Shipping, Quality or Supervisor user to sign in and open this page.'}</Alert>}
+
+  {(mode === 'A' || mode === 'B') && (
+    <form class="form form--wide" method="post" action={`/shipments/${no}/pack-verify`} novalidate>
+      <CsrfField />
+      <h2 class="section-title">Checklist</h2>
+      <p>{mode === 'A' ? 'Answer every item: Pass or Fail.' : 'What the verifier will check (read-only for you).'}</p>
+      <ol class="checklist">
+        {ITEMS.map(([k, text, help], i) => (
+          <li>
+            <fieldset class="check-item" id={`checklist-${k}`} aria-describedby={state.fields[`checklist.${k}`] ? `checklist-${k}-err` : undefined}>
+              <legend>{i + 1}. {text}</legend>
+              <p class="check-item__help">{help}</p>
+              <div class="choice-group choice-group--inline">
+                <label class="choice choice--pass"><input type="radio" name={`checklist[${k}]`} value="pass" checked={checklistVals[k] === 'pass'} disabled={mode === 'B'} /><span class="choice__text">Pass</span></label>
+                <label class="choice choice--fail"><input type="radio" name={`checklist[${k}]`} value="fail" checked={checklistVals[k] === 'fail'} disabled={mode === 'B'} /><span class="choice__text">Fail</span></label>
+              </div>
+              {state.fields[`checklist.${k}`] && <p class="form-field__error" id={`checklist-${k}-err`}><span>{state.fields[`checklist.${k}`]}</span></p>}
+            </fieldset>
+          </li>
+        ))}
+      </ol>
+      {mode === 'A' && <FormField id="note" label="Note (required if any item fails)" type="textarea" rows={3} maxlength={500} value={v(state.values, 'note')} error={state.fields.note} />}
+      {mode === 'A' ? (
+        <div class="action-row form-actions">
+          <button class="btn btn--primary" type="submit" name="intent" value="pass">Mark Verified</button>
+          <button class="btn btn--danger" type="submit" name="intent" value="fail">Fail verification and send to Rework</button>
+        </div>
+      ) : (
+        <div class="action-unavailable">
+          <div class="action-row">
+            <button class="btn btn--primary" type="button" aria-disabled="true" aria-describedby="why-unavailable">Mark Verified</button>
+            <button class="btn btn--danger" type="button" aria-disabled="true" aria-describedby="why-unavailable">Fail verification and send to Rework</button>
+          </div>
+          <p class="action-unavailable__reason" id="why-unavailable">{reasonB}</p>
+        </div>
+      )}
+      {mode === 'A' && <p class="text-muted text-small">Mark Verified needs every item on Pass. Fail verification needs at least one Fail and a note.</p>}
+    </form>
+  )}
+
+  <section aria-labelledby="att-h"><h2 id="att-h" class="section-title">Attempts so far</h2>
+    {s.verifications.length === 0 ? <p class="text-muted">No attempts yet.</p> : (
+      <div class="table-wrap" tabindex="0" role="region" aria-label="Attempts (scrolls sideways on small screens)"><table class="table"><caption class="visually-hidden">Verification attempts</caption>
+        <thead><tr><th scope="col">#</th><th scope="col">Result</th><th scope="col">By</th><th scope="col">When (UTC)</th><th scope="col">Failed items</th></tr></thead>
+        <tbody>{s.verifications.map((a: any) => <tr><th scope="row">{a.attempt_no}</th><td>{String(a.result).toLowerCase() === 'pass' ? '✔ Pass' : '✖ Fail'}</td><td>{a.verified_by.display_name}</td><td>{dateTimeText(a.verified_at)}</td><td>{Array.isArray(a.failed_items) && a.failed_items.length ? a.failed_items.join(', ') : '–'}</td></tr>)}</tbody></table></div>
+    )}
+  </section>
+</AppLayout>

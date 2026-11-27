@@ -1,0 +1,45 @@
+---
+// POST /shipments/{no}/actions/{mark-ready|start-packing|hold|release|cancel|reopen} (routes F-mark-ready ... F-reopen).
+// Success: 303 back to the detail page with a flash (PRG). Failure: this page re-renders with the Problem alert / error summary.
+import AppLayout from '../../../../layouts/AppLayout.astro';
+import PageHeader from '../../../../components/PageHeader.astro';
+import FormAlerts from '../../../../components/shipments/FormAlerts.astro';
+import HoldForm from '../../../../components/shipments/HoldForm.astro';
+import CancelForm from '../../../../components/shipments/CancelForm.astro';
+import { appLocals } from '../../../../components/locals';
+import { getSql } from '../../../../lib/db';
+import { cancelShipment, holdShipment, markReady, releaseShipment, reopenShipment, startPacking } from '../../../../lib/services/shipments';
+import { cancelSchema, holdSchema, noteOnly } from '../../../../lib/validation/shipments';
+import { listLookup } from '../../../../lib/services/lookups';
+import { submit, type FormState, emptyState } from '../../../../components/shipments/forms';
+
+export const prerender = false;
+const { user } = appLocals(Astro.locals);
+const { no, action } = Astro.params as { no: string; action: string };
+if (!user) return Astro.redirect('/login');
+if (Astro.request.method !== 'POST') return Astro.redirect(`/shipments/${no}`);
+const MSG: Record<string, string> = {
+  'mark-ready': `${no} is Ready to Pack.`, 'start-packing': `Packing started on ${no}. You are the packer; another person must verify it.`, hold: `${no} is On Hold.`,
+  release: `${no} was released from hold.`, cancel: `${no} was cancelled.`, reopen: `${no} is reopened. Next: start packing again.`,
+};
+const TITLE: Record<string, string> = { 'mark-ready': 'Mark Ready to Pack', 'start-packing': 'Start packing', hold: 'Put on hold', release: 'Release from hold', cancel: 'Cancel shipment', reopen: 'Reopen for packing' };
+const common = { redirectTo: `/shipments/${no}`, flash: MSG[action] };
+let r;
+if (action === 'hold') r = await submit(Astro, { ...common, schema: holdSchema, run: (s, u, i) => holdShipment(s, u, no, i as any) });
+else if (action === 'cancel') r = await submit(Astro, { ...common, schema: cancelSchema, run: (s, u, i) => cancelShipment(s, u, no, i as any) });
+else {
+  const fn = ({ 'mark-ready': markReady, 'start-packing': startPacking, release: releaseShipment, reopen: reopenShipment } as Record<string, any>)[action];
+  if (!fn) return Astro.rewrite('/404');
+  r = await submit(Astro, { ...common, schema: noteOnly, run: (s, u, i) => fn(s, u, no, i) });
+}
+if ('response' in r) return r.response;
+const state: FormState = r.state ?? emptyState;
+const reasons = action === 'hold' ? (await listLookup(getSql(), 'reason-codes', { category: 'hold' })).data.map((x: any) => ({ value: String(x.id), label: x.label })) : [];
+---
+<AppLayout title={`${TITLE[action] ?? 'Action'} ${no}`}>
+  <PageHeader title={`${TITLE[action] ?? 'Action'}: ${no}`} crumbs={[{ label: 'Shipments', href: '/shipments' }, { label: no, href: `/shipments/${no}` }, { label: TITLE[action] ?? action }]} />
+  <FormAlerts state={state} />
+  {action === 'hold' && <HoldForm no={no} reasons={reasons} values={state.values} fields={state.fields} />}
+  {action === 'cancel' && <CancelForm no={no} values={state.values} fields={state.fields} />}
+  <p><a class="btn btn--secondary" href={`/shipments/${no}`}>Back to {no}</a></p>
+</AppLayout>

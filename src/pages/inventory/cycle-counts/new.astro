@@ -1,0 +1,52 @@
+---
+// S17 New cycle count (F-count-new).
+import AppLayout from '../../../layouts/AppLayout.astro';
+import PageHeader from '../../../components/PageHeader.astro';
+import FormField from '../../../components/FormField.astro';
+import ErrorSummary from '../../../components/ErrorSummary.astro';
+import Alert from '../../../components/Alert.astro';
+import CsrfField from '../../../components/CsrfField.astro';
+import { getSql } from '../../../lib/db';
+import { handleForm } from '../../../lib/http/form-handler';
+import { createCountSchema } from '../../../lib/validation/inventory';
+import { createCycleCount } from '../../../lib/services/cycle-counts';
+import { listLookup } from '../../../lib/services/lookups';
+import { getBusinessClock } from '../../../lib/clock';
+import { formCtx, fieldErrors, errOf, val, alertText, isAlert, type Failure } from '../../../components/inventory/form-utils';
+
+export const prerender = false;
+const sql = getSql();
+let failure: Failure | null = null;
+if (Astro.request.method === 'POST') {
+  const out = await handleForm(formCtx(Astro), {
+    schema: createCountSchema,
+    run: (s, u, input) => createCycleCount(s, u, input),
+    redirectTo: (r) => `/inventory/cycle-counts/${r.count_no}`,
+    flash: (r) => `Cycle count ${r.count_no} created with ${r.line_count} lines.`,
+  });
+  if (out.ok) return out.response;
+  failure = out;
+  Astro.response.status = out.status;
+}
+const locations = (await listLookup(sql, 'locations', { active: 'true' })).data as any[];
+const clock = await getBusinessClock(sql);
+const errors = fieldErrors(failure, { abc_class: 'ABC class', location_id: 'Location', scheduled_date: 'Scheduled date' });
+---
+<AppLayout title="New cycle count">
+  <PageHeader title="New cycle count" operational crumbs={[{ label: 'Inventory' }, { label: 'Cycle counts', href: '/inventory/cycle-counts' }, { label: 'New' }]} />
+  {isAlert(failure) && <Alert variant="error" focusOnLoad>{alertText(failure)}</Alert>}
+  <form class="form stack" method="post" action="/inventory/cycle-counts/new" novalidate>
+    <CsrfField />
+    <ErrorSummary errors={errors} />
+    <p class="text-muted">Choose an ABC class, a location, or both. Every stock row in that scope becomes a line to count.</p>
+    <div class="grid grid--2">
+      <FormField id="scheduled_date" label="Scheduled date" type="date" value={val(failure, 'scheduled_date', clock.today)} error={errOf(failure, 'scheduled_date')} />
+      <FormField id="abc_class" label="ABC class" type="select" placeholderOption="Any class" value={val(failure, 'abc_class')} error={errOf(failure, 'abc_class')} options={['A', 'B', 'C'].map((v) => ({ value: v, label: v }))} />
+      <FormField id="location_id" label="Location" type="select" placeholderOption="Any location" value={val(failure, 'location_id')} error={errOf(failure, 'location_id')} options={locations.map((l) => ({ value: String(l.id), label: `${l.code} (${l.type})` }))} />
+    </div>
+    <div class="action-row form-actions">
+      <button class="btn btn--primary" type="submit">Create count</button>
+      <a class="btn btn--link" href="/inventory/cycle-counts">Cancel</a>
+    </div>
+  </form>
+</AppLayout>

@@ -1,0 +1,67 @@
+---
+// S22 Settings: KPI targets + tolerances (Admin, Supervisor) and the reporting date (Admin only).
+import AppLayout from '../../layouts/AppLayout.astro';
+import PageHeader from '../PageHeader.astro';
+import FormField from '../FormField.astro';
+import ErrorSummary from '../ErrorSummary.astro';
+import Alert from '../Alert.astro';
+import CsrfField from '../CsrfField.astro';
+import { can } from '../../lib/auth/permissions';
+import { appLocals } from '../locals';
+import { fieldErrors, alertText, isAlert, type Failure } from '../inventory/form-utils';
+interface Props { settings: any; failure: Failure | null; failedForm: string }
+const { settings: s, failure, failedForm } = Astro.props;
+const { user } = appLocals(Astro.locals);
+const canReport = can(user?.role, 'settings.reporting');
+const FIELDS: { name: string; label: string; cur: number; hint?: string }[] = [
+  { name: 'target_on_time_pct', label: 'On-time shipment target (%)', cur: s.targets.on_time_pct },
+  { name: 'target_otif_pct', label: 'OTIF target (%)', cur: s.targets.otif_pct },
+  { name: 'target_pkg_error_rate_pct', label: 'Packaging error rate target (%)', cur: s.targets.pkg_error_rate_pct },
+  { name: 'target_fpy_pct', label: 'First-pass yield target (%)', cur: s.targets.fpy_pct },
+  { name: 'target_rework_freq_pct', label: 'Rework frequency target (%)', cur: s.targets.rework_freq_pct },
+  { name: 'target_cycle_time_h', label: 'Order cycle time target (hours)', cur: s.targets.cycle_time_h },
+  { name: 'target_inventory_accuracy_pct', label: 'Inventory accuracy target (%)', cur: s.targets.inventory_accuracy_pct },
+  { name: 'target_dock_to_stock_h', label: 'Dock-to-stock target (hours)', cur: s.targets.dock_to_stock_h },
+  { name: 'tolerance_a_pct', label: 'Count tolerance, class A (%)', cur: s.tolerances.a_pct },
+  { name: 'tolerance_b_pct', label: 'Count tolerance, class B (%)', cur: s.tolerances.b_pct },
+  { name: 'tolerance_c_pct', label: 'Count tolerance, class C (%)', cur: s.tolerances.c_pct },
+  { name: 'on_time_tolerance_days', label: 'On-time tolerance (days)', cur: s.tolerances.on_time_days },
+];
+const tf = failedForm === 'targets' ? failure : null;
+const rf = failedForm === 'reporting' ? failure : null;
+const v = (f: Failure | null, k: string, d: unknown) => (f && f.values[k] !== undefined ? String(f.values[k]) : String(d));
+const mode = v(rf, 'mode', s.reporting.mode);
+---
+<AppLayout title="Settings">
+  <PageHeader title="Settings" crumbs={[{ label: 'Admin' }, { label: 'Settings' }]} />
+  {isAlert(failure) && <Alert variant="error" focusOnLoad>{alertText(failure)}</Alert>}
+
+  <section class="card stack" aria-labelledby="targets-h">
+    <h2 id="targets-h" class="card__title">KPI targets and tolerances</h2>
+    <form class="form stack" method="post" action="/admin/settings/targets" novalidate>
+      <CsrfField />
+      <ErrorSummary errors={fieldErrors(tf, {}, '')} />
+      <div class="grid grid--2">
+        {FIELDS.map((f) => <FormField id={f.name} label={f.label} type="text" inputmode="decimal" value={v(tf, f.name, f.cur)} error={tf?.fields[f.name]} />)}
+        <FormField id="on_time_basis" label="On-time basis" type="select" value={v(tf, 'on_time_basis', s.on_time_basis)} options={[{ value: 'promise', label: 'Promise date' }, { value: 'requested', label: 'Requested date' }]} error={tf?.fields.on_time_basis} />
+      </div>
+      <div class="action-row form-actions"><button class="btn btn--primary" type="submit">Save targets</button></div>
+    </form>
+  </section>
+
+  <section class="card stack" aria-labelledby="rep-h">
+    <h2 id="rep-h" class="card__title">Reporting date</h2>
+    <p class="text-muted">Currently <strong>{s.reporting.mode === 'live' ? 'live' : 'fixed'}</strong>: business date {s.reporting.business_today}. The fixed demo date keeps KPIs reproducible.</p>
+    {canReport ? (
+      <form class="form stack" method="post" action="/admin/settings/reporting" novalidate>
+        <CsrfField />
+        <ErrorSummary errors={fieldErrors(rf)} />
+        <div class="grid grid--2">
+          <FormField id="mode" label="Mode" type="select" required value={mode} options={[{ value: 'fixed', label: 'Fixed demo date' }, { value: 'live', label: 'Live (real date)' }]} error={rf?.fields.mode} />
+          <FormField id="reporting_date" label="Reporting date" type="date" value={v(rf, 'reporting_date', s.reporting.reporting_date)} hint="Required in fixed mode." error={rf?.fields.reporting_date} />
+        </div>
+        <div class="action-row form-actions"><button class="btn btn--primary" type="submit">Save reporting date</button></div>
+      </form>
+    ) : <Alert variant="info" lead="Admin only:">Only an Admin can change the reporting date.</Alert>}
+  </section>
+</AppLayout>

@@ -1,0 +1,63 @@
+---
+// S04 edit (F1). Status is never editable here; Shipped and Cancelled are locked (UD-3).
+import AppLayout from '../../../layouts/AppLayout.astro';
+import PageHeader from '../../../components/PageHeader.astro';
+import ShipmentForm from '../../../components/shipments/ShipmentForm.astro';
+import FormAlerts from '../../../components/shipments/FormAlerts.astro';
+import StatusBadge from '../../../components/StatusBadge.astro';
+import Alert from '../../../components/Alert.astro';
+import Forbidden from '../../../components/Forbidden.astro';
+import { appLocals } from '../../../components/locals';
+import { getSql } from '../../../lib/db';
+import { findShipment, getShipmentDetail } from '../../../lib/repos/shipments';
+import { updateShipment } from '../../../lib/services/shipments';
+import { updateShipmentSchema } from '../../../lib/validation/shipments';
+import { emptyState, flash as takeF, rowControl, submit, can, type FormState } from '../../../components/shipments/forms';
+import { formLookups, lineRows } from '../../../components/shipments/shipment-data';
+
+export const prerender = false;
+const { user, reportingDate } = appLocals(Astro.locals);
+const no = Astro.params.no!;
+if (!user) return Astro.redirect(`/login?reason=required&next=/shipments/${no}/edit`);
+const sql = getSql();
+const row = await findShipment(sql, { no });
+if (!row) return Astro.rewrite('/404');
+const detail = (await getShipmentDetail(sql, Number(row.id), user))!;
+const allowed = can(Astro.locals, 'shipment.write');
+const locked = ['Shipped', 'Cancelled'].includes(detail.status);
+let state: FormState = emptyState;
+let ctrl = { add: false, remove: null as number | null };
+if (allowed && !locked && Astro.request.method === 'POST') {
+  ctrl = await rowControl(Astro.request);
+  const r = await submit(Astro, {
+    schema: updateShipmentSchema, booleans: ['doc_packing_slip', 'doc_bol', 'doc_coc', 'doc_labels'],
+    run: (s, u, input) => updateShipment(s, u, no, input),
+    redirectTo: `/shipments/${no}`, flash: (s: any) => (s.status === 'Rework' ? `Saved. ${no} went back to Rework and must be verified again.` : `Shipment ${no} saved.`),
+  });
+  if ('response' in r) return r.response;
+  state = r.state;
+}
+const lookups = await formLookups(sql, { customer: detail.customer, parts: detail.lines.map((l: any) => ({ id: l.part.id, label: l.part.part_number })) });
+const posted = state.kind === 'none' ? undefined : state.values;
+const base = { customer_id: detail.customer.id, customer_po: detail.customer_po, order_date: detail.order_date, requested_date: detail.requested_date, promise_date: detail.promise_date,
+  service_level: detail.service_level ?? '', notes: detail.notes ?? '', doc_packing_slip: detail.doc_packing_slip, doc_bol: detail.doc_bol, doc_coc: detail.doc_coc, doc_labels: detail.doc_labels };
+const values = posted ?? base;
+const fallback = detail.lines.map((l: any) => ({ id: l.id, part_id: l.part.id, qty_ordered: l.qty_ordered, lot_number: l.lot_number ?? '' }));
+const lines = lineRows(posted?.lines, ctrl, fallback);
+const flash = takeF(Astro);
+---
+<AppLayout title={`Edit ${no}`}>
+  <PageHeader title={`Edit shipment ${no}`} crumbs={[{ label: 'Shipments', href: '/shipments' }, { label: no, href: `/shipments/${no}` }, { label: 'Edit' }]} operational>
+    <Fragment slot="meta"><StatusBadge status={detail.status} /></Fragment>
+  </PageHeader>
+  {!allowed ? <Forbidden role={user.role} action="edit shipments" /> : locked ? (
+    <Alert variant="info" lead="Note:">{detail.status} shipments can't be edited. {detail.status === 'Shipped' && user.role === 'Supervisor' ? <a href={`/shipments/${no}/correct`}>Correct details</a> : null}</Alert>
+  ) : (
+    <>
+      {detail.status === 'Verified' && <Alert variant="warning" lead="Check:">Saving changes to the customer, customer PO, or a line's part, quantity, lot or location sends {no} back to Rework. It will have to be verified again.</Alert>}
+      <FormAlerts flash={flash} state={state} />
+      <ShipmentForm action={`/shipments/${no}/edit`} submitLabel="Save changes" cancelHref={`/shipments/${no}`} values={values} lines={lines} fields={state.fields}
+        customers={lookups.customers} parts={lookups.parts} reportingDate={reportingDate} editing />
+    </>
+  )}
+</AppLayout>

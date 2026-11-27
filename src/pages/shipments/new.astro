@@ -1,0 +1,46 @@
+---
+// S04 create (F1). GET renders the form; POST (route F-ship-new) runs createShipment through the shared form adapter.
+import AppLayout from '../../layouts/AppLayout.astro';
+import PageHeader from '../../components/PageHeader.astro';
+import ShipmentForm from '../../components/shipments/ShipmentForm.astro';
+import FormAlerts from '../../components/shipments/FormAlerts.astro';
+import Forbidden from '../../components/Forbidden.astro';
+import { appLocals } from '../../components/locals';
+import { getSql } from '../../lib/db';
+import { createShipment } from '../../lib/services/shipments';
+import { createShipmentSchema } from '../../lib/validation/shipments';
+import { emptyState, flash as takeF, rowControl, submit, can, type FormState } from '../../components/shipments/forms';
+import { formLookups, lineRows } from '../../components/shipments/shipment-data';
+
+export const prerender = false;
+const { user, reportingDate } = appLocals(Astro.locals);
+if (!user) return Astro.redirect('/login?reason=required&next=/shipments/new');
+const allowed = can(Astro.locals, 'shipment.write');
+let state: FormState = emptyState;
+let ctrl = { add: false, remove: null as number | null };
+if (allowed && Astro.request.method === 'POST') {
+  ctrl = await rowControl(Astro.request);
+  const r = await submit(Astro, {
+    schema: createShipmentSchema, booleans: ['doc_packing_slip', 'doc_bol', 'doc_coc', 'doc_labels'],
+    run: (sql, u, input) => createShipment(sql, u, input),
+    redirectTo: (s: any) => `/shipments/${s.shipment_no}`, flash: (s: any) => `Shipment ${s.shipment_no} created. Next: mark it Ready to Pack.`,
+  });
+  if ('response' in r) return r.response;
+  state = r.state;
+}
+const sql = getSql();
+const { customers, parts } = await formLookups(sql);
+const values = state.values;
+const lines = lineRows(values.lines, ctrl);
+const flash = takeF(Astro);
+---
+<AppLayout title="New shipment">
+  <PageHeader title="New shipment" crumbs={[{ label: 'Shipments', href: '/shipments' }, { label: 'New shipment' }]} operational />
+  {!allowed ? <Forbidden role={user.role} action="create shipments" /> : (
+    <>
+      <FormAlerts flash={flash} state={state} />
+      <ShipmentForm action="/shipments/new" submitLabel="Save shipment" cancelHref="/shipments" values={values} lines={lines} fields={state.fields}
+        customers={customers} parts={parts} reportingDate={reportingDate} />
+    </>
+  )}
+</AppLayout>

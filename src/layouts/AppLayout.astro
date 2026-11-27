@@ -3,7 +3,9 @@
 import '../styles/app.css';
 import Icon from '../components/Icon.astro';
 import { appLocals, formatReportingDate } from '../components/locals';
+import Alert from '../components/Alert.astro';
 import { navFor } from '../components/nav-permissions';
+import { takeFlash } from '../lib/http/respond';
 
 interface Props { title: string; description?: string; hideNav?: boolean }
 const { title, description, hideNav = false } = Astro.props;
@@ -17,6 +19,7 @@ const dateText = reportingDate
     ? `Live date: ${formatReportingDate(reportingDate)}`
     : `Reporting as of ${formatReportingDate(reportingDate)} — demonstration data`
   : '';
+const flash = user ? takeFlash(Astro.cookies as never) : null;
 const pageTitle = `${title} | Cobalt Ridge Ops (DEMO)`;
 ---
 <!doctype html>
@@ -78,6 +81,7 @@ const pageTitle = `${title} | Cobalt Ridge Ops (DEMO)`;
         </div>
       )}
       <main id="main" class="main" tabindex="-1">
+        {flash && <div class="alert-list"><Alert variant={flash.kind === 'error' ? 'error' : flash.kind === 'success' ? 'success' : 'info'}>{flash.text}</Alert></div>}
         <slot />
       </main>
     </div>

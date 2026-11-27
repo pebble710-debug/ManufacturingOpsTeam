@@ -1,0 +1,145 @@
+---
+// S05 Shipment detail with status actions. Buttons come from allowed_actions; unavailable ones explain why.
+import AppLayout from '../../../layouts/AppLayout.astro';
+import PageHeader from '../../../components/PageHeader.astro';
+import StatusBadge from '../../../components/StatusBadge.astro';
+import SeverityBadge from '../../../components/SeverityBadge.astro';
+import ActionButton from '../../../components/ActionButton.astro';
+import CsrfField from '../../../components/CsrfField.astro';
+import EmptyState from '../../../components/EmptyState.astro';
+import Alert from '../../../components/Alert.astro';
+import FormAlerts from '../../../components/shipments/FormAlerts.astro';
+import HoldForm from '../../../components/shipments/HoldForm.astro';
+import CancelForm from '../../../components/shipments/CancelForm.astro';
+import { appLocals } from '../../../components/locals';
+import { getSql } from '../../../lib/db';
+import { findShipment, getShipmentDetail } from '../../../lib/repos/shipments';
+import { listLookup } from '../../../lib/services/lookups';
+import { can, dateText, dateTimeText, flash as takeF } from '../../../components/shipments/forms';
+
+export const prerender = false;
+const { user } = appLocals(Astro.locals);
+const no = Astro.params.no!;
+if (!user) return Astro.redirect(`/login?reason=required&next=/shipments/${no}`);
+const sql = getSql();
+const row = /^SH-\d{4,}$/.test(no) ? await findShipment(sql, { no }) : undefined;
+if (!row) return Astro.rewrite('/404');
+const s = (await getShipmentDetail(sql, Number(row.id), user))!;
+const holdReasons = (await listLookup(sql, 'reason-codes', { category: 'hold' })).data.map((r: any) => ({ value: String(r.id), label: r.label }));
+const flash = takeF(Astro);
+const allowed = new Set<string>(s.allowed_actions);
+const cap = (a: string) => can(Astro.locals, a === 'edit' ? 'shipment.write' : `shipment.${a}`);
+const WHEN: Record<string, string> = {
+  'mark-ready': 'Planned', 'start-packing': 'Ready to Pack (or Rework after it was reopened)', verify: 'Packing', ship: 'Verified', hold: 'an active status',
+  release: 'On Hold', cancel: 'an active status', reopen: 'Rework', correct: 'Shipped or Cancelled',
+};
+function why(a: string): string {
+  if (a === 'verify' && s.status === 'Packing') return s.packed_by && s.packed_by.id === user!.id ? 'You packed this shipment, so someone else must verify it.' : 'Packing has not been started by a packer yet.';
+  if (a === 'start-packing' && s.status === 'Packing') return 'Packing has already started.';
+  if (a === 'start-packing' && s.status === 'Rework') return 'Reopen the shipment first (Quality or Supervisor), after the error and a completed rework are logged.';
+  if (a === 'cancel' && user!.role === 'Shipping' && ['Packing', 'Verified', 'Rework', 'On Hold'].includes(s.status)) return 'Shipping can cancel only Planned or Ready to Pack shipments. Ask a Supervisor.';
+  if (a === 'edit') return `${s.status} shipments can't be edited.`;
+  return `Not available while ${no} is ${s.status}. It applies when the shipment is ${WHEN[a]}.`;
+}
+const ONE_CLICK: [string, string, 'primary' | 'secondary'][] = [
+  ['mark-ready', 'Mark Ready to Pack', 'primary'], ['start-packing', 'Start packing', 'primary'], ['release', 'Release from hold', 'primary'], ['reopen', 'Reopen for packing', 'secondary'],
+];
+const LINKS: [string, string, string, 'primary' | 'secondary'][] = [
+  ['verify', 'Open Pack & Verify', `/shipments/${no}/pack-verify`, 'primary'], ['ship', 'Ship', `/shipments/${no}/ship`, 'primary'],
+  ['edit', 'Edit', `/shipments/${no}/edit`, 'secondary'], ['correct', 'Correct details', `/shipments/${no}/correct`, 'secondary'],
+];
+const logErr = can(Astro.locals, 'error.log') && s.status !== 'Cancelled';
+const kv = (k: string, val: any) => [k, val === null || val === undefined || val === '' ? '–' : val];
+const facts = [
+  kv('Customer', s.customer.name), kv('Customer PO', s.customer_po), kv('Order date', dateText(s.order_date)), kv('Requested date', dateText(s.requested_date)),
+  kv('Promise date', dateText(s.promise_date)), kv('Ship date', s.ship_date ? dateText(s.ship_date) : null), kv('Carrier', s.carrier?.name), kv('Tracking number', s.tracking_number),
+  kv('Packages', s.packages_count), kv('Total weight (lb)', s.total_weight_lb), kv('Late reason', s.late_reason?.label), kv('Service level', s.service_level),
+  kv('Packed by', s.packed_by?.display_name), kv('Verified by', s.verified_by?.display_name),
+  kv('Hold reason', s.hold_reason ? `${s.hold_reason.label}${s.hold_owner_dept ? ` (${s.hold_owner_dept})` : ''}` : null),
+  kv('On-time', s.on_time_indicator ? `${s.on_time_indicator}${s.days_late ? ` (${s.days_late} days)` : ''}` : null),
+  kv('Documents ready', [s.doc_packing_slip && 'Packing slip', s.doc_bol && 'BOL', s.doc_coc && 'C of C', s.doc_labels && 'Labels'].filter(Boolean).join(', ') || 'None yet'),
+];
+const fmt = (c: any) => Object.entries(c.changes).map(([k, [a, b]]: any) => `${k.replace(/_/g, ' ')}: ${a ?? '–'} → ${b ?? '–'}`).concat((c.lines as any[]).map((l) => `line ${l.line_id} short note: ${l.short_note?.[0] ?? '–'} → ${l.short_note?.[1] ?? '–'}`)).join('; ') || '–';
+---
+<AppLayout title={`Shipment ${no}`}>
+  <PageHeader title={`Shipment ${no}`} crumbs={[{ label: 'Shipments', href: '/shipments' }, { label: no }]} operational>
+    <Fragment slot="meta"><StatusBadge status={s.status} /> {s.is_overdue && <span class="badge badge--warning">Overdue</span>}</Fragment>
+  </PageHeader>
+  <FormAlerts flash={flash} />
+  {s.status === 'Rework' && <Alert variant="warning" lead="Rework:">{no} {s.rework_origin === 'VERIFICATION_FAILED' ? 'failed verification' : s.rework_origin === 'ERROR_LOGGED' ? 'had a packaging error logged' : 'was edited after verification'}. Log the packaging error and complete the rework, then Quality or Supervisor reopens it for packing.</Alert>}
+
+  <section aria-labelledby="actions-h" class="card stack">
+    <h2 id="actions-h" class="card__title">Actions</h2>
+    <div class="action-row">
+      {ONE_CLICK.filter(([a]) => cap(a)).map(([a, text, variant]) => (
+        <form method="post" action={`/shipments/${no}/actions/${a}`}><CsrfField />
+          <ActionButton id={`act-${a}`} label={text} variant={variant} unavailable={!allowed.has(a)} reason={why(a)} />
+        </form>
+      ))}
+      {LINKS.filter(([a]) => cap(a) && (allowed.has(a) || !['edit', 'correct'].includes(a))).map(([a, text, href, variant]) => (
+        <ActionButton id={`act-${a}`} label={text} variant={variant} href={href} type="button" unavailable={!allowed.has(a)} reason={why(a)} />
+      ))}
+      {!can(Astro.locals, 'shipment.verify') && s.status === 'Packing' && <a class="btn btn--secondary" href={`/shipments/${no}/pack-verify`}>Open Pack &amp; Verify (view only)</a>}
+      {logErr && <a class="btn btn--secondary" href={`/quality/errors/new?shipment=${no}`}>Log packaging error</a>}
+    </div>
+    {cap('hold') && (allowed.has('hold') ? (
+      <details class="disclosure"><summary>Put on hold…</summary><HoldForm no={no} reasons={holdReasons} /></details>
+    ) : <ActionButton id="act-hold" label="Put on hold" type="button" unavailable reason={why('hold')} />)}
+    {cap('cancel') && (allowed.has('cancel') ? (
+      <details class="disclosure"><summary>Cancel shipment…</summary><CancelForm no={no} /></details>
+    ) : <ActionButton id="act-cancel" label="Cancel shipment" type="button" unavailable reason={why('cancel')} />)}
+  </section>
+
+  <section aria-labelledby="facts-h"><h2 id="facts-h" class="section-title">Details</h2>
+    <dl class="grid grid--auto">{facts.map(([k, val]) => <div><dt class="text-muted text-small">{k}</dt><dd>{val}</dd></div>)}</dl>
+    {s.notes && <p><strong>Notes:</strong> {s.notes}</p>}
+  </section>
+
+  <section aria-labelledby="lines-h"><h2 id="lines-h" class="section-title">Lines</h2>
+    <div class="table-wrap" tabindex="0" role="region" aria-label="Shipment lines (scrolls sideways on small screens)"><table class="table"><caption class="visually-hidden">Lines of {no}</caption>
+      <thead><tr><th scope="col">Line</th><th scope="col">Part</th><th scope="col" class="numeric">Ordered</th><th scope="col" class="numeric">Shipped</th><th scope="col">Lot</th><th scope="col">Location</th><th scope="col">Short-ship note</th></tr></thead>
+      <tbody>{s.lines.map((l: any) => (
+        <tr><th scope="row">{l.line_no}</th><td>{l.part.part_number} {l.part.description}</td><td class="numeric">{l.qty_ordered}</td><td class="numeric">{l.qty_shipped ?? '–'}</td>
+          <td class="text-mono">{l.lot_number ?? '–'}</td><td>{l.location?.code ?? '–'}</td><td>{l.short_note ?? '–'}</td></tr>
+      ))}</tbody></table></div>
+  </section>
+
+  <section aria-labelledby="hist-h"><h2 id="hist-h" class="section-title">Status history</h2>
+    <div class="table-wrap" tabindex="0" role="region" aria-label="Status history (scrolls sideways on small screens)"><table class="table"><caption class="visually-hidden">Status history of {no}</caption>
+      <thead><tr><th scope="col">When (UTC)</th><th scope="col">From</th><th scope="col">To</th><th scope="col">By</th><th scope="col">Note</th></tr></thead>
+      <tbody>{s.status_history.map((h: any) => (
+        <tr><th scope="row">{dateTimeText(h.changed_at)}</th><td>{h.from_status ?? '–'}</td><td>{h.to_status}</td><td>{h.changed_by.display_name}</td><td>{h.note ?? '–'}</td></tr>
+      ))}</tbody></table></div>
+  </section>
+
+  {s.corrections.length > 0 && (
+    <section aria-labelledby="corr-h"><h2 id="corr-h" class="section-title">Corrections</h2>
+      <div class="table-wrap" tabindex="0" role="region" aria-label="Corrections (scrolls sideways on small screens)"><table class="table"><caption class="visually-hidden">Corrections to {no}</caption>
+        <thead><tr><th scope="col">When (UTC)</th><th scope="col">Supervisor</th><th scope="col">Reason</th><th scope="col">Changes</th></tr></thead>
+        <tbody>{s.corrections.map((c: any) => <tr><th scope="row">{dateTimeText(c.at)}</th><td>{c.by.display_name}</td><td>{c.reason}</td><td>{fmt(c)}</td></tr>)}</tbody></table></div>
+    </section>
+  )}
+
+  <section aria-labelledby="ver-h"><h2 id="ver-h" class="section-title">Verification attempts</h2>
+    {s.verifications.length === 0 ? <EmptyState title="No verification attempts yet" /> : (
+      <div class="table-wrap" tabindex="0" role="region" aria-label="Verification attempts (scrolls sideways on small screens)"><table class="table"><caption class="visually-hidden">Verification attempts for {no}</caption>
+        <thead><tr><th scope="col">#</th><th scope="col">Result</th><th scope="col">Verifier</th><th scope="col">Packer</th><th scope="col">When (UTC)</th><th scope="col">Failed items</th><th scope="col">Note</th></tr></thead>
+        <tbody>{s.verifications.map((a: any) => (
+          <tr><th scope="row">{a.attempt_no}</th><td>{a.result === 'pass' || a.result === 'Pass' ? '✔ Pass' : '✖ Fail'}</td><td>{a.verified_by.display_name}</td><td>{a.packer.display_name}</td>
+            <td>{dateTimeText(a.verified_at)}</td><td>{Array.isArray(a.failed_items) && a.failed_items.length ? a.failed_items.join(', ') : '–'}</td><td>{a.note ?? '–'}</td></tr>
+        ))}</tbody></table></div>
+    )}
+  </section>
+
+  <section aria-labelledby="err-h"><h2 id="err-h" class="section-title">Packaging errors and rework</h2>
+    {s.packaging_errors.length === 0 ? <EmptyState title="No packaging errors logged for this shipment" /> : (
+      <div class="table-wrap" tabindex="0" role="region" aria-label="Packaging errors (scrolls sideways on small screens)"><table class="table"><caption class="visually-hidden">Packaging errors for {no}</caption>
+        <thead><tr><th scope="col">Error</th><th scope="col">Category</th><th scope="col">Severity</th><th scope="col">Stage</th><th scope="col">Status</th></tr></thead>
+        <tbody>{s.packaging_errors.map((e: any) => (
+          <tr><th scope="row" class="cell-id"><a href={`/quality/errors/${e.error_no}`}>{e.error_no}</a></th><td>{e.category}</td><td><SeverityBadge severity={e.severity} /></td><td>{e.detected_stage === 'After ship' ? 'After ship (customer-found)' : e.detected_stage}</td><td>{e.status}</td></tr>
+        ))}</tbody></table></div>
+    )}
+    {s.rework_events.length > 0 && <p class="text-small text-muted">Rework: {s.rework_events.map((w: any) => `${w.error_no} ${w.action} (${w.status}${w.minutes != null ? `, ${w.minutes} min` : ''})`).join('; ')}</p>}
+    {s.corrective_actions.length > 0 && <p class="text-small text-muted">Corrective actions: {s.corrective_actions.map((c: any) => `${c.error_no} ${c.action_description} (${c.status}, due ${dateText(c.due_date)})`).join('; ')}</p>}
+  </section>
+</AppLayout>

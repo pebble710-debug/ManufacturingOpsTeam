@@ -1,0 +1,9 @@
+---
+// S18 Cycle count detail (P-count-detail).
+import CountDetail from '../../../components/inventory/CountDetail.astro';
+import { countPage } from '../../../components/inventory/count-actions';
+export const prerender = false;
+const r = await countPage(Astro, 'view');
+if (r.notFound) return Astro.rewrite('/404');
+---
+<CountDetail count={r.count} failure={null} reasons={r.reasons} />

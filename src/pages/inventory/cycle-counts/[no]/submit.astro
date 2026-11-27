@@ -1,0 +1,10 @@
+---
+// POST /inventory/cycle-counts/{no}/submit (form route); re-renders the count page with the error on failure.
+import CountDetail from '../../../../components/inventory/CountDetail.astro';
+import { countPage } from '../../../../components/inventory/count-actions';
+export const prerender = false;
+const r = await countPage(Astro, 'submit');
+if (r.response) return r.response;
+if (r.notFound) return Astro.rewrite('/404');
+---
+<CountDetail count={r.count} failure={r.failure} reasons={r.reasons} />

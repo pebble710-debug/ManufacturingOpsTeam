@@ -1,0 +1,16 @@
+---
+// S08 hold fields: reason code, owning department, note. Used inline on the detail page and when the post is refused.
+import CsrfField from '../CsrfField.astro';
+import FormField from '../FormField.astro';
+import { HOLD_DEPTS } from '../../lib/validation/shipments';
+import { v } from './forms';
+interface Props { no: string; reasons: { value: string; label: string }[]; values?: Record<string, any>; fields?: Record<string, string> }
+const { no, reasons, values = {}, fields = {} } = Astro.props;
+---
+<form class="form" method="post" action={`/shipments/${no}/actions/hold`} novalidate>
+  <CsrfField />
+  <FormField id="hold_reason_id" label="Hold reason" type="select" required value={v(values, 'hold_reason_id')} placeholderOption="Select reason" options={reasons} error={fields.hold_reason_id} />
+  <FormField id="hold_owner_dept" label="Department that owns the hold" type="select" required value={v(values, 'hold_owner_dept')} placeholderOption="Select department" options={HOLD_DEPTS.map((d) => ({ value: d, label: d }))} error={fields.hold_owner_dept} />
+  <FormField id="note" label="Note (optional)" type="textarea" rows={2} value={v(values, 'note')} maxlength={500} error={fields.note} />
+  <div class="action-row form-actions"><button class="btn btn--primary" type="submit">Put {no} on hold</button></div>
+</form>

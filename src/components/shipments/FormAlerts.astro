@@ -1,0 +1,13 @@
+---
+// Flash message + in-place Problem alert (403/409/other) + error summary (422), in that order (contract 1.12).
+import Alert from '../Alert.astro';
+import ErrorSummary from '../ErrorSummary.astro';
+import type { FormState } from './forms';
+import type { Flash } from '../../lib/http/respond';
+interface Props { flash?: Flash | null; state?: FormState }
+const { flash = null, state } = Astro.props;
+const showMessage = state && ['alert', 'generic'].includes(state.kind) && state.message;
+---
+{flash && <Alert variant={flash.kind === 'error' ? 'error' : flash.kind === 'info' ? 'info' : 'success'}>{flash.text}</Alert>}
+{showMessage && <Alert variant={state!.kind === 'alert' && state!.status === 409 ? 'warning' : 'error'} lead="Problem:" focusOnLoad>{state!.message}</Alert>}
+{state && state.kind === 'rerender' && <ErrorSummary errors={state.errors.map((e) => e.fieldId === '_' ? { ...e, message: e.message.replace(/^[^:]*: /, '') } : e)} />}

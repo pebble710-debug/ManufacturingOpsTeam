@@ -1,0 +1,63 @@
+---
+// S14 Receive material (F-receipt-new). GET shows the form; POST runs createReceipt via handleForm (PRG on success, 422 re-render).
+import AppLayout from '../../../layouts/AppLayout.astro';
+import PageHeader from '../../../components/PageHeader.astro';
+import FormField from '../../../components/FormField.astro';
+import ErrorSummary from '../../../components/ErrorSummary.astro';
+import Alert from '../../../components/Alert.astro';
+import CsrfField from '../../../components/CsrfField.astro';
+import { getSql } from '../../../lib/db';
+import { handleForm } from '../../../lib/http/form-handler';
+import { createReceiptSchema } from '../../../lib/validation/inventory';
+import { createReceipt } from '../../../lib/services/inventory';
+import { listLookup } from '../../../lib/services/lookups';
+import { formCtx, fieldErrors, errOf, val, alertText, isAlert, type Failure } from '../../../components/inventory/form-utils';
+import { getBusinessClock } from '../../../lib/clock';
+
+export const prerender = false;
+const sql = getSql();
+let failure: Failure | null = null;
+if (Astro.request.method === 'POST') {
+  const out = await handleForm(formCtx(Astro), {
+    schema: createReceiptSchema,
+    run: (s, user, input) => createReceipt(s, user, input),
+    redirectTo: '/inventory/receipts',
+    flash: (r) => `Receipt ${r.receipt_no} recorded: ${r.qty_received} x ${r.part.part_number}, lot ${r.lot_number} (${r.inspection_status}).`,
+  });
+  if (out.ok) return out.response;
+  failure = out;
+  Astro.response.status = out.status;
+}
+const suppliers = (await listLookup(sql, 'suppliers', { active: 'true' })).data as any[];
+const parts = (await listLookup(sql, 'parts', { active: 'true' })).data as any[];
+const locations = (await listLookup(sql, 'locations', { active: 'true' })).data as any[];
+const clock = await getBusinessClock(sql);
+const errors = fieldErrors(failure, { supplier_id: 'Supplier', supplier_po: 'Supplier PO', part_id: 'Part', qty_received: 'Quantity', lot_number: 'Lot', arrived_at: 'Arrival time', inspection_status: 'Inspection status', location_id: 'Location' });
+---
+<AppLayout title="Receive material">
+  <PageHeader title="Receive material" operational crumbs={[{ label: 'Inventory' }, { label: 'Receipts', href: '/inventory/receipts' }, { label: 'Receive material' }]} />
+  {isAlert(failure) && <Alert variant="error" focusOnLoad>{alertText(failure)}</Alert>}
+  <form class="form stack" method="post" action="/inventory/receipts/new" novalidate>
+    <CsrfField />
+    <ErrorSummary errors={errors} />
+    <div class="grid grid--2">
+      <FormField id="supplier_id" label="Supplier" type="select" required value={val(failure, 'supplier_id')} placeholderOption="Choose a supplier" error={errOf(failure, 'supplier_id')}
+        options={suppliers.map((s) => ({ value: String(s.id), label: s.name }))} />
+      <FormField id="supplier_po" label="Supplier PO" required value={val(failure, 'supplier_po')} maxlength={40} error={errOf(failure, 'supplier_po')} inputClass="input--code" />
+      <FormField id="part_id" label="Part" type="select" required value={val(failure, 'part_id')} placeholderOption="Choose a part" error={errOf(failure, 'part_id')}
+        options={parts.map((p) => ({ value: String(p.id), label: `${p.part_number} - ${p.description}` }))} />
+      <FormField id="qty_received" label="Quantity received" type="number" required min={1} inputmode="numeric" value={val(failure, 'qty_received')} error={errOf(failure, 'qty_received')} />
+      <FormField id="lot_number" label="Lot number" required value={val(failure, 'lot_number')} hint="Format L<yy><ww>-<nnn>, for example L2611-004." error={errOf(failure, 'lot_number')} inputClass="input--code" />
+      <FormField id="arrived_at" label="Arrived at" type="text" value={val(failure, 'arrived_at')} hint={`Optional. Format YYYY-MM-DDTHH:MM (UTC). Leave blank for now (reporting date ${clock.today}).`} error={errOf(failure, 'arrived_at')} />
+      <FormField id="inspection_status" label="Inspection status" type="select" required value={val(failure, 'inspection_status', 'Accepted')} error={errOf(failure, 'inspection_status')}
+        options={['Accepted', 'On Hold', 'Rejected'].map((v) => ({ value: v, label: v }))} />
+      <FormField id="location_id" label="Put-away location" type="select" value={val(failure, 'location_id')} placeholderOption="None / default hold location" error={errOf(failure, 'location_id')}
+        hint="Required for Accepted (Stock, Receiving or FG). On Hold goes to a Hold location. Leave empty for Rejected."
+        options={locations.map((l) => ({ value: String(l.id), label: `${l.code} (${l.type})` }))} />
+    </div>
+    <div class="action-row form-actions">
+      <button class="btn btn--primary" type="submit">Record receipt</button>
+      <a class="btn btn--link" href="/inventory/receipts">Cancel</a>
+    </div>
+  </form>
+</AppLayout>

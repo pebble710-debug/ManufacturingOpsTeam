@@ -1,0 +1,28 @@
+---
+// S24 New lookup record (P-lookup-new / F-lookup-new).
+import AppLayout from '../../../../layouts/AppLayout.astro';
+import PageHeader from '../../../../components/PageHeader.astro';
+import ErrorSummary from '../../../../components/ErrorSummary.astro';
+import Alert from '../../../../components/Alert.astro';
+import CsrfField from '../../../../components/CsrfField.astro';
+import LookupFields from '../../../../components/admin/LookupFields.astro';
+import { lookupPage } from '../../../../components/admin/lookup-actions';
+import { LOOKUP_LABELS, SPECS } from '../../../../components/admin/lookup-specs';
+import { fieldErrors, alertText, isAlert } from '../../../../components/inventory/form-utils';
+export const prerender = false;
+const r = await lookupPage(Astro, 'new');
+if (r.response) return r.response;
+if (r.notFound || !SPECS[r.type]) return Astro.rewrite('/404');
+const label = LOOKUP_LABELS[r.type];
+const errors = fieldErrors(r.failure);
+---
+<AppLayout title={`New ${label} record`}>
+  <PageHeader title={`New record: ${label}`} crumbs={[{ label: 'Admin' }, { label: 'Lookups' }, { label, href: `/admin/lookups/${r.type}` }, { label: 'New' }]} />
+  {isAlert(r.failure) && <Alert variant="error" focusOnLoad>{alertText(r.failure)}</Alert>}
+  <form class="form stack" method="post" action={`/admin/lookups/${r.type}/new`} novalidate>
+    <CsrfField />
+    <ErrorSummary errors={errors} />
+    <LookupFields type={r.type} values={r.failure?.values} errors={r.failure?.fields} isNew />
+    <div class="action-row form-actions"><button class="btn btn--primary" type="submit">Create record</button><a class="btn btn--link" href={`/admin/lookups/${r.type}`}>Cancel</a></div>
+  </form>
+</AppLayout>

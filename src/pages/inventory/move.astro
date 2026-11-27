@@ -1,0 +1,100 @@
+---
+// S16 Move stock (F-move): transfer, scrap, production complete. One form per type so unused fields never post.
+import AppLayout from '../../layouts/AppLayout.astro';
+import PageHeader from '../../components/PageHeader.astro';
+import FormField from '../../components/FormField.astro';
+import ErrorSummary from '../../components/ErrorSummary.astro';
+import Alert from '../../components/Alert.astro';
+import CsrfField from '../../components/CsrfField.astro';
+import { getSql } from '../../lib/db';
+import { handleForm } from '../../lib/http/form-handler';
+import { inventoryTxnSchema } from '../../lib/validation/inventory';
+import { postInventoryTxn } from '../../lib/services/inventory';
+import { listLookup } from '../../lib/services/lookups';
+import { formCtx, fieldErrors, errOf, val, alertText, isAlert, type Failure } from '../../components/inventory/form-utils';
+import { appLocals } from '../../components/locals';
+
+export const prerender = false;
+const sql = getSql();
+const { user } = appLocals(Astro.locals);
+const KEEP: Record<string, string[]> = {
+  TRANSFER: ['txn_type', 'part_id', 'lot_number', 'from_location_id', 'to_location_id', 'qty', 'note'],
+  SCRAP: ['txn_type', 'part_id', 'lot_number', 'location_id', 'qty', 'reason_code_id', 'note'],
+  PRODUCTION_COMPLETE: ['txn_type', 'part_id', 'lot_number', 'location_id', 'qty', 'note'],
+};
+let failure: Failure | null = null;
+if (Astro.request.method === 'POST') {
+  const out = await handleForm(formCtx(Astro), {
+    schema: inventoryTxnSchema,
+    prepare: (i) => { const keep = KEEP[String(i.txn_type)]; return keep ? Object.fromEntries(Object.entries(i).filter(([k]) => keep.includes(k))) : i; },
+    run: (s, u, input) => postInventoryTxn(s, u, input),
+    redirectTo: '/inventory/transactions',
+    flash: (r) => `Posted ${r.transactions.length} ledger ${r.transactions.length === 1 ? 'entry' : 'entries'} (${r.transactions[0]?.txn_type}).`,
+  });
+  if (out.ok) return out.response;
+  failure = out;
+  Astro.response.status = out.status;
+}
+const parts = ((await listLookup(sql, 'parts', { active: 'true' })).data as any[]).map((p) => ({ value: String(p.id), label: p.part_number }));
+const locs = (await listLookup(sql, 'locations', { active: 'true' })).data as any[];
+const locOpts = locs.map((l) => ({ value: String(l.id), label: `${l.code} (${l.type})` }));
+const fgOpts = locs.filter((l) => l.type === 'FG').map((l) => ({ value: String(l.id), label: `${l.code} (${l.type})` }));
+const scrapReasons = ((await listLookup(sql, 'reason-codes', { active: 'true', category: 'scrap' })).data as any[]).map((r) => ({ value: String(r.id), label: r.label }));
+const failedType = failure ? String(failure.values.txn_type ?? '') : '';
+const forType = (t: string) => (failedType === t ? failure : null);
+const prefix: Record<string, string> = { TRANSFER: 't_', SCRAP: 's_', PRODUCTION_COMPLETE: 'p_' };
+const errors = failedType && prefix[failedType] ? fieldErrors(failure, {}, prefix[failedType]) : fieldErrors(failure);
+---
+<AppLayout title="Move stock">
+  <PageHeader title="Move stock" operational crumbs={[{ label: 'Inventory' }, { label: 'Move stock' }]} />
+  <Alert variant="info" lead="Hold rules:">Moving stock out of a Hold location needs Quality or a Supervisor. Quality can only move or scrap stock into or out of Hold locations. Receiving cannot release held stock.{user ? ` You are signed in as ${user.role}.` : ''}</Alert>
+  {isAlert(failure) && <Alert variant="error" focusOnLoad>{alertText(failure)}</Alert>}
+  <ErrorSummary errors={errors} />
+
+  <section class="card stack" aria-labelledby="h-transfer">
+    <h2 id="h-transfer" class="card__title">Transfer between locations</h2>
+    <form class="form stack" method="post" action="/inventory/move" novalidate>
+      <CsrfField /><input type="hidden" name="txn_type" value="TRANSFER" />
+      <div class="grid grid--2">
+        <FormField id="t_part_id" name="part_id" label="Part" type="select" required placeholderOption="Choose a part" options={parts} value={forType('TRANSFER') ? val(failure, 'part_id') : ''} error={errOf(forType('TRANSFER'), 'part_id')} />
+        <FormField id="t_lot_number" name="lot_number" label="Lot number" required inputClass="input--code" value={forType('TRANSFER') ? val(failure, 'lot_number') : ''} error={errOf(forType('TRANSFER'), 'lot_number')} />
+        <FormField id="t_from_location_id" name="from_location_id" label="From location" type="select" required placeholderOption="Choose" options={locOpts} value={forType('TRANSFER') ? val(failure, 'from_location_id') : ''} error={errOf(forType('TRANSFER'), 'from_location_id')} />
+        <FormField id="t_to_location_id" name="to_location_id" label="To location" type="select" required placeholderOption="Choose" options={locOpts} value={forType('TRANSFER') ? val(failure, 'to_location_id') : ''} error={errOf(forType('TRANSFER'), 'to_location_id')} />
+        <FormField id="t_qty" name="qty" label="Quantity" type="number" required min={1} inputmode="numeric" value={forType('TRANSFER') ? val(failure, 'qty') : ''} error={errOf(forType('TRANSFER'), 'qty')} />
+        <FormField id="t_note" name="note" label="Note" value={forType('TRANSFER') ? val(failure, 'note') : ''} maxlength={500} error={errOf(forType('TRANSFER'), 'note')} />
+      </div>
+      <div class="action-row form-actions"><button class="btn btn--primary" type="submit">Post transfer</button></div>
+    </form>
+  </section>
+
+  <section class="card stack" aria-labelledby="h-scrap">
+    <h2 id="h-scrap" class="card__title">Scrap</h2>
+    <form class="form stack" method="post" action="/inventory/move" novalidate>
+      <CsrfField /><input type="hidden" name="txn_type" value="SCRAP" />
+      <div class="grid grid--2">
+        <FormField id="s_part_id" name="part_id" label="Part" type="select" required placeholderOption="Choose a part" options={parts} value={forType('SCRAP') ? val(failure, 'part_id') : ''} error={errOf(forType('SCRAP'), 'part_id')} />
+        <FormField id="s_lot_number" name="lot_number" label="Lot number" required inputClass="input--code" value={forType('SCRAP') ? val(failure, 'lot_number') : ''} error={errOf(forType('SCRAP'), 'lot_number')} />
+        <FormField id="s_location_id" name="location_id" label="Location" type="select" required placeholderOption="Choose" options={locOpts} value={forType('SCRAP') ? val(failure, 'location_id') : ''} error={errOf(forType('SCRAP'), 'location_id')} />
+        <FormField id="s_qty" name="qty" label="Quantity" type="number" required min={1} inputmode="numeric" value={forType('SCRAP') ? val(failure, 'qty') : ''} error={errOf(forType('SCRAP'), 'qty')} />
+        <FormField id="s_reason_code_id" name="reason_code_id" label="Scrap reason" type="select" required placeholderOption="Choose a reason" options={scrapReasons} value={forType('SCRAP') ? val(failure, 'reason_code_id') : ''} error={errOf(forType('SCRAP'), 'reason_code_id')} />
+        <FormField id="s_note" name="note" label="Note" maxlength={500} value={forType('SCRAP') ? val(failure, 'note') : ''} error={errOf(forType('SCRAP'), 'note')} />
+      </div>
+      <div class="action-row form-actions"><button class="btn btn--danger" type="submit">Post scrap</button></div>
+    </form>
+  </section>
+
+  <section class="card stack" aria-labelledby="h-prod">
+    <h2 id="h-prod" class="card__title">Production complete</h2>
+    <form class="form stack" method="post" action="/inventory/move" novalidate>
+      <CsrfField /><input type="hidden" name="txn_type" value="PRODUCTION_COMPLETE" />
+      <div class="grid grid--2">
+        <FormField id="p_part_id" name="part_id" label="Part" type="select" required placeholderOption="Choose a part" options={parts} value={forType('PRODUCTION_COMPLETE') ? val(failure, 'part_id') : ''} error={errOf(forType('PRODUCTION_COMPLETE'), 'part_id')} />
+        <FormField id="p_lot_number" name="lot_number" label="Lot number" required inputClass="input--code" hint="A new lot is created if it does not exist." value={forType('PRODUCTION_COMPLETE') ? val(failure, 'lot_number') : ''} error={errOf(forType('PRODUCTION_COMPLETE'), 'lot_number')} />
+        <FormField id="p_location_id" name="location_id" label="Finished-goods location" type="select" required placeholderOption="Choose" options={fgOpts} value={forType('PRODUCTION_COMPLETE') ? val(failure, 'location_id') : ''} error={errOf(forType('PRODUCTION_COMPLETE'), 'location_id')} />
+        <FormField id="p_qty" name="qty" label="Quantity" type="number" required min={1} inputmode="numeric" value={forType('PRODUCTION_COMPLETE') ? val(failure, 'qty') : ''} error={errOf(forType('PRODUCTION_COMPLETE'), 'qty')} />
+        <FormField id="p_note" name="note" label="Note" maxlength={500} value={forType('PRODUCTION_COMPLETE') ? val(failure, 'note') : ''} error={errOf(forType('PRODUCTION_COMPLETE'), 'note')} />
+      </div>
+      <div class="action-row form-actions"><button class="btn btn--primary" type="submit">Post production complete</button></div>
+    </form>
+  </section>
+</AppLayout>

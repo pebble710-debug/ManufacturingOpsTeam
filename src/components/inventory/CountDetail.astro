@@ -1,0 +1,134 @@
+---
+// S18/S19 Cycle count detail: blind entry (Open), submit, approve (Counted), result (Approved).
+import AppLayout from '../../layouts/AppLayout.astro';
+import PageHeader from '../PageHeader.astro';
+import Alert from '../Alert.astro';
+import ErrorSummary from '../ErrorSummary.astro';
+import CsrfField from '../CsrfField.astro';
+import FormField from '../FormField.astro';
+import { can } from '../../lib/auth/permissions';
+import { appLocals } from '../locals';
+import { fieldErrors, alertText, isAlert, val, type Failure } from './form-utils';
+
+interface Props { count: any; failure: Failure | null; reasons: { id: number; label: string }[] }
+const { count, failure, reasons } = Astro.props;
+const { user } = appLocals(Astro.locals);
+const role = user?.role;
+const base = `/inventory/cycle-counts/${count.count_no}`;
+const open = count.status === 'Open';
+const counted = count.status === 'Counted';
+const approved = count.status === 'Approved';
+const showSystem = counted || approved ? count.lines.some((l: any) => 'system_qty' in l) : false;
+const canEnter = open && can(role, 'count.enter');
+const entryBack = new Map<number, any>(((failure?.values?.entries as any[]) ?? []).map((e) => [Number(e.line_id), e]));
+const fromEntries = failure && 'entries' in (failure.values ?? {});
+const errors = fieldErrors(failure);
+const needsRecount = count.lines.filter((l: any) => l.recount_required).length;
+const uncounted = count.lines.filter((l: any) => l.counted_qty === null).length;
+const entryLines = count.lines.filter((l: any) => l.counted_qty === null || l.recount_required);
+const refusal = failure?.code === 'APPROVER_SAME_AS_COUNTER' || failure?.code === 'APPROVER_SAME_AS_SUBMITTER';
+const badgeCls = approved ? 'success' : counted ? 'info' : 'neutral';
+---
+<AppLayout title={`Cycle count ${count.count_no}`}>
+  <PageHeader title={`Cycle count ${count.count_no}`} operational crumbs={[{ label: 'Inventory' }, { label: 'Cycle counts', href: '/inventory/cycle-counts' }, { label: count.count_no }]} />
+  {isAlert(failure) && <Alert variant="error" lead={refusal ? 'Not allowed:' : 'Problem:'} focusOnLoad>{alertText(failure)}</Alert>}
+  <section class="card stack" aria-label="Count summary">
+    <dl class="detail-list">
+      <dt>Status</dt><dd><span class={`badge badge--${badgeCls}`}>{count.status}</span></dd>
+      <dt>Scheduled</dt><dd>{count.scheduled_date}</dd>
+      <dt>Scope</dt><dd>{count.scope.abc_class ? `ABC class ${count.scope.abc_class}` : ''}{count.scope.abc_class && count.scope.location ? ', ' : ''}{count.scope.location ? `location ${count.scope.location.code}` : ''}</dd>
+      <dt>Lines counted</dt><dd>{count.counted_count} of {count.line_count}</dd>
+    </dl>
+  </section>
+
+  {open && canEnter && (
+    <section class="stack" aria-labelledby="enter-h">
+      <h2 id="enter-h">Enter counts (blind)</h2>
+      <p class="text-muted">System quantities are hidden on purpose. Count what is on the shelf and type it in. A first count cannot be changed later; lines outside tolerance need a recount.</p>
+      {needsRecount > 0 && <Alert variant="warning" lead="Recount needed:">{needsRecount} line{needsRecount === 1 ? '' : 's'} outside tolerance. Enter a recount below.</Alert>}
+      {entryLines.length === 0 ? <Alert variant="success" lead="All counted:">Every line is counted. Submit the count for approval.</Alert> : (
+        <form class="form stack" method="post" action={`${base}/entries`} novalidate>
+          <CsrfField />
+          <ErrorSummary errors={fromEntries ? errors : []} />
+          <div class="table-wrap" tabindex="0" role="region" aria-label="Count entry lines">
+            <table class="table table--compact">
+              <caption class="visually-hidden">Lines to count</caption>
+              <thead><tr><th scope="col">Part</th><th scope="col">Location</th><th scope="col">Lot</th><th scope="col">Quantity</th></tr></thead>
+              <tbody>
+                {count.lines.map((l: any, i: number) => (l.counted_qty === null || l.recount_required) && (
+                  <tr>
+                    <th scope="row" class="cell-id">{l.part.part_number}</th><td>{l.location.code}</td><td>{l.lot_number}</td>
+                    <td>
+                      <input type="hidden" name={`entries[${i}][line_id]`} value={l.id} />
+                      {l.counted_qty === null ? (
+                        <><label class="visually-hidden" for={`entries-${i}-counted_qty`}>Counted quantity for {l.part.part_number} at {l.location.code}, lot {l.lot_number}</label>
+                        <input class="input" type="number" min="0" inputmode="numeric" id={`entries-${i}-counted_qty`} name={`entries[${i}][counted_qty]`} value={entryBack.get(l.id)?.counted_qty ?? ''} /></>
+                      ) : (
+                        <><span class="badge badge--warning">Recount needed</span> first count {l.counted_qty}<br />
+                        <label class="visually-hidden" for={`entries-${i}-recount_qty`}>Recount quantity for {l.part.part_number} at {l.location.code}, lot {l.lot_number}</label>
+                        <input class="input" type="number" min="0" inputmode="numeric" id={`entries-${i}-recount_qty`} name={`entries[${i}][recount_qty]`} value={entryBack.get(l.id)?.recount_qty ?? ''} /></>
+                      )}
+                      {errors.length > 0 && failure?.fields?.[`entries[${i}].counted_qty`] && <p class="form-field__error">{failure.fields[`entries[${i}].counted_qty`]}</p>}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div class="action-row form-actions"><button class="btn btn--primary" type="submit">Save counts</button></div>
+        </form>
+      )}
+      <form class="form" method="post" action={`${base}/submit`} novalidate>
+        <CsrfField />
+        <div class="action-row form-actions">
+          <button class="btn btn--secondary" type="submit">Submit count for approval</button>
+          {uncounted > 0 && <span class="text-muted text-small">{uncounted} line{uncounted === 1 ? '' : 's'} still uncounted.</span>}
+        </div>
+      </form>
+    </section>
+  )}
+  {open && !canEnter && <Alert variant="info" lead="Waiting for counts:">Receiving or a Supervisor enters the counts. Your role can view this count only.</Alert>}
+
+  {(counted || approved) && (
+    <section class="stack" aria-labelledby="res-h">
+      <h2 id="res-h">{approved ? 'Result' : 'Counted lines'}</h2>
+      <div class="table-wrap" tabindex="0" role="region" aria-label="Count lines">
+        <table class="table table--compact">
+          <caption class="visually-hidden">Count lines</caption>
+          <thead><tr><th scope="col">Part</th><th scope="col">Location</th><th scope="col">Lot</th><th scope="col" class="numeric">Counted</th><th scope="col" class="numeric">Recount</th>
+            {showSystem && <><th scope="col" class="numeric">System</th><th scope="col" class="numeric">Variance</th></>}</tr></thead>
+          <tbody>
+            {count.lines.map((l: any) => (
+              <tr>
+                <th scope="row" class="cell-id">{l.part.part_number}</th><td>{l.location.code}</td><td>{l.lot_number}</td>
+                <td class="numeric">{l.counted_qty ?? ''}</td><td class="numeric">{l.recount_qty ?? ''}</td>
+                {showSystem && <><td class="numeric">{l.system_qty}</td><td class="numeric">{l.final_variance ?? l.variance ?? 0}{l.within_tolerance === false ? ' (outside tolerance)' : ''}{l.adjustment_txn_id ? ' - adjusted' : ''}</td></>}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  )}
+
+  {counted && can(role, 'count.approve') && (
+    count.can_approve ? (
+      <section class="card stack" aria-labelledby="appr-h">
+        <h2 id="appr-h" class="card__title">Approve count</h2>
+        <p class="text-muted">Approving posts an ADJUST entry for every line whose final count differs from the system quantity. A reason is required when there is any variance.</p>
+        <form class="form stack" method="post" action={`${base}/approve`} novalidate>
+          <CsrfField />
+          <ErrorSummary errors={!fromEntries ? errors : []} />
+          <FormField id="reason_code_id" label="Adjustment reason" type="select" placeholderOption="Choose a reason" value={val(failure, 'reason_code_id')} error={failure?.fields?.reason_code_id}
+            options={reasons.map((r) => ({ value: String(r.id), label: r.label }))} />
+          <FormField id="note" label="Note" maxlength={500} value={val(failure, 'note')} error={failure?.fields?.note} />
+          <div class="action-row form-actions"><button class="btn btn--primary" type="submit">Approve count</button></div>
+        </form>
+      </section>
+    ) : (
+      <Alert variant="warning" lead="You cannot approve this count:">You entered, recounted or submitted lines on it. A different Supervisor must approve it (separation of duties).</Alert>
+    )
+  )}
+  {counted && !can(role, 'count.approve') && <Alert variant="info" lead="Waiting for approval:">A Supervisor who did not count this must approve it.</Alert>}
+  {approved && <Alert variant="success" lead="Approved:">This count is closed. Adjustments appear in <a href="/inventory/transactions?txn_type=ADJUST">the ledger</a>.</Alert>}
+</AppLayout>

@@ -1,0 +1,48 @@
+---
+// S17a Cycle counts list (P-counts).
+import AppLayout from '../../../layouts/AppLayout.astro';
+import PageHeader from '../../../components/PageHeader.astro';
+import FilterBar from '../../../components/FilterBar.astro';
+import FormField from '../../../components/FormField.astro';
+import DataTable from '../../../components/DataTable.astro';
+import Pagination from '../../../components/Pagination.astro';
+import EmptyState from '../../../components/EmptyState.astro';
+import { getSql } from '../../../lib/db';
+import { can } from '../../../lib/auth/permissions';
+import { listCycleCounts } from '../../../lib/services/cycle-counts';
+import { listQuery, qs, qsDate } from '../../../components/inventory/form-utils';
+import { appLocals } from '../../../components/locals';
+
+export const prerender = false;
+const { user } = appLocals(Astro.locals);
+const url = Astro.url;
+const lq = listQuery(url, { count_no: 'c.count_no', scheduled_date: 'c.scheduled_date', status: 'c.status' }, 'scheduled_date', true);
+const status = qs(url, 'status');
+const res = await listCycleCounts(getSql(), { status: ['Open', 'Counted', 'Approved'].includes(status) ? status : undefined, from: qsDate(url, 'from'), to: qsDate(url, 'to'), sortCol: lq.sortCol, desc: lq.desc, limit: lq.pageSize, offset: lq.offset });
+---
+<AppLayout title="Cycle counts">
+  <PageHeader title="Cycle counts" crumbs={[{ label: 'Inventory' }, { label: 'Cycle counts' }]}>
+    {user && can(user.role, 'count.create') && <a slot="actions" class="btn btn--primary" href="/inventory/cycle-counts/new">New count</a>}
+  </PageHeader>
+  <FilterBar label="Filter cycle counts">
+    <FormField id="status" label="Status" type="select" value={status} placeholderOption="Any" options={['Open', 'Counted', 'Approved'].map((v) => ({ value: v, label: v }))} />
+    <FormField id="from" label="Scheduled from" type="date" value={qsDate(url, 'from') ?? ''} />
+    <FormField id="to" label="Scheduled to" type="date" value={qsDate(url, 'to') ?? ''} />
+  </FilterBar>
+  {res.total === 0 ? <EmptyState title="No cycle counts" text="Create a count to start." /> : (
+    <DataTable caption="Cycle counts" sort={lq.sortKey} dir={lq.desc ? 'desc' : 'asc'} columns={[
+      { key: 'count_no', label: 'Count', sortable: true }, { key: 'scheduled_date', label: 'Scheduled', sortable: true }, { key: 'scope', label: 'Scope' },
+      { key: 'status', label: 'Status', sortable: true }, { key: 'lines', label: 'Counted / lines', numeric: true },
+    ]}>
+      {res.data.map((c) => (
+        <tr>
+          <th scope="row" class="cell-id"><a href={`/inventory/cycle-counts/${c.count_no}`}>{c.count_no}</a></th><td>{c.scheduled_date}</td>
+          <td>{[c.scope.abc_class && `Class ${c.scope.abc_class}`, c.scope.location?.code].filter(Boolean).join(', ')}</td>
+          <td><span class={`badge badge--${c.status === 'Approved' ? 'success' : c.status === 'Counted' ? 'info' : 'neutral'}`}>{c.status}</span></td>
+          <td class="numeric">{c.counted_count} / {c.line_count}</td>
+        </tr>
+      ))}
+    </DataTable>
+  )}
+  <Pagination page={lq.page} total={res.total} noun="cycle counts" />
+</AppLayout>

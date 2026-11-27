@@ -1,0 +1,113 @@
+---
+// S03 Shipment list (ui-spec). Filters and sort live in the query string. Uses listShipments (E-05 read model).
+import AppLayout from '../../layouts/AppLayout.astro';
+import PageHeader from '../../components/PageHeader.astro';
+import FilterBar from '../../components/FilterBar.astro';
+import FormField from '../../components/FormField.astro';
+import DataTable from '../../components/DataTable.astro';
+import Pagination from '../../components/Pagination.astro';
+import StatusBadge from '../../components/StatusBadge.astro';
+import EmptyState from '../../components/EmptyState.astro';
+import FormAlerts from '../../components/shipments/FormAlerts.astro';
+import { appLocals } from '../../components/locals';
+import { getSql } from '../../lib/db';
+import { listShipments } from '../../lib/repos/shipments';
+import { listLookup } from '../../lib/services/lookups';
+import { SHIPMENT_STATUSES } from '../../lib/validation/shipments';
+import { can, dateText, flash as takeF } from '../../components/shipments/forms';
+
+export const prerender = false;
+const { user, reportingDate } = appLocals(Astro.locals);
+if (!user) return Astro.redirect('/login?reason=required&next=/shipments');
+const sql = getSql();
+const sp = Astro.url.searchParams;
+const flash = takeF(Astro);
+
+const isDate = (s: string | null) => (s && /^\d{4}-\d{2}-\d{2}$/.test(s) ? s : undefined);
+const DATE_FIELDS: Record<string, string> = { order_date: 'Order date', requested_date: 'Requested date', promise_date: 'Promise date', ship_date: 'Ship date' };
+const SORTS: Record<string, string> = { shipment_no: 's.shipment_no', customer: 'c.name', promise_date: 's.promise_date', ship_date: 's.ship_date', status: 's.status', order_date: 's.order_date' };
+const statusRaw = sp.getAll('status').flatMap((s) => s.split(',')).filter((s) => (SHIPMENT_STATUSES as readonly string[]).includes(s));
+const dateField = sp.get('date_field') && DATE_FIELDS[sp.get('date_field')!] ? sp.get('date_field')! : 'promise_date';
+const from = isDate(sp.get('from'));
+const to = isDate(sp.get('to'));
+const qRaw = (sp.get('q') ?? '').trim();
+const customerId = /^\d+$/.test(sp.get('customer_id') ?? '') ? Number(sp.get('customer_id')) : undefined;
+const carrierId = /^\d+$/.test(sp.get('carrier_id') ?? '') ? Number(sp.get('carrier_id')) : undefined;
+const flag = (k: string) => ['1', 'true', 'on'].includes(sp.get(k) ?? '');
+const sort = sp.get('sort') && SORTS[sp.get('sort')!] ? sp.get('sort')! : 'promise_date';
+const dir = sp.get('dir') === 'desc' ? 'desc' : sp.get('dir') === 'asc' ? 'asc' : sort === 'promise_date' ? 'asc' : 'asc';
+const pageNo = Math.max(1, Number(sp.get('page')) || 1);
+const PAGE = 25;
+const problems: string[] = [];
+if (qRaw && qRaw.length < 2) problems.push('Search needs at least 2 characters.');
+if (from && to && from > to) problems.push('From date is after the To date; no filter was applied to dates.');
+
+const list = await listShipments(sql, {
+  status: statusRaw.length ? statusRaw : undefined, customer_id: customerId, carrier_id: carrierId, q: qRaw.length >= 2 ? qRaw : undefined,
+  date_field: dateField, from: from && to && from > to ? undefined : from, to: from && to && from > to ? undefined : to,
+  late: flag('late'), overdue: flag('overdue'), has_error: flag('has_error'), sortCol: SORTS[sort], desc: dir === 'desc', limit: PAGE, offset: (pageNo - 1) * PAGE,
+});
+const customers = (await listLookup(sql, 'customers', {})).data;
+const carriers = (await listLookup(sql, 'carriers', {})).data;
+const today = reportingDate || new Date().toISOString().slice(0, 10);
+const daysBetween = (a: string, b: string) => Math.round((Date.parse(`${b}T00:00:00Z`) - Date.parse(`${a}T00:00:00Z`)) / 86400000);
+const timing = (s: any) => s.status === 'Shipped' ? (s.on_time_indicator === 'Late' ? `Late (${s.days_late} ${s.days_late === 1 ? 'day' : 'days'})` : 'On time')
+  : s.status === 'Cancelled' ? '–' : s.is_overdue ? `Overdue (${daysBetween(s.promise_date, today)} days)` : 'Not yet due';
+const columns = [
+  { key: 'shipment_no', label: 'Shipment', sortable: true }, { key: 'customer', label: 'Customer', sortable: true },
+  { key: 'promise_date', label: 'Promise date', sortable: true }, { key: 'status', label: 'Status', sortable: true },
+  { key: 'timing', label: 'Timing' }, { key: 'carrier', label: 'Carrier', priority: 2 as const }, { key: 'ship_date', label: 'Ship date', sortable: true, priority: 2 as const },
+  { key: 'po', label: 'Customer PO', priority: 3 as const },
+];
+const views = [
+  { label: 'All', href: '/shipments', on: !statusRaw.length && !flag('overdue') && !flag('late') },
+  { label: 'Overdue', href: '/shipments?overdue=1', on: flag('overdue') && !statusRaw.length },
+  { label: 'On Hold', href: '/shipments?status=On%20Hold', on: statusRaw.join() === 'On Hold' },
+  { label: 'Ready to Pack', href: '/shipments?status=Ready%20to%20Pack', on: statusRaw.join() === 'Ready to Pack' },
+  { label: 'Rework', href: '/shipments?status=Rework', on: statusRaw.join() === 'Rework' },
+];
+const sortLabel = ({ shipment_no: 'shipment number', customer: 'customer', promise_date: 'promise date', ship_date: 'ship date', status: 'status', order_date: 'order date' } as Record<string, string>)[sort];
+---
+<AppLayout title="Shipments" description="Find and track outgoing shipments.">
+  <PageHeader title="Shipments" crumbs={[{ label: 'Dashboard', href: '/dashboard' }, { label: 'Shipments' }]}>
+    <Fragment slot="actions">{can(Astro.locals, 'shipment.write') && <a class="btn btn--primary" href="/shipments/new">New shipment</a>}</Fragment>
+  </PageHeader>
+  <FormAlerts flash={flash} />
+  <nav aria-label="Shipment views"><ul class="action-row">
+    {views.map((vw) => <li><a class="btn btn--link" href={vw.href} aria-current={vw.on ? 'true' : undefined} style={vw.on ? 'font-weight:700' : undefined}>{vw.label}</a></li>)}
+  </ul></nav>
+  <FilterBar label="Filter shipments" clearHref="/shipments">
+    <FormField id="q" label="Search" type="search" value={qRaw} hint="Shipment no., customer PO or tracking no." error={qRaw && qRaw.length < 2 ? 'Enter at least 2 characters.' : undefined} />
+    <FormField id="status" label="Status" type="select" value={statusRaw[0] ?? ''} placeholderOption="All" options={SHIPMENT_STATUSES.map((s) => ({ value: s, label: s }))} />
+    <FormField id="customer_id" label="Customer" type="select" value={customerId ?? ''} placeholderOption="All" options={customers.map((c: any) => ({ value: String(c.id), label: c.name }))} />
+    <FormField id="carrier_id" label="Carrier" type="select" value={carrierId ?? ''} placeholderOption="All" options={carriers.map((c: any) => ({ value: String(c.id), label: c.name }))} />
+    <FormField id="date_field" label="Date field" type="select" value={dateField} options={Object.entries(DATE_FIELDS).map(([value, label]) => ({ value, label }))} />
+    <FormField id="from" label="From" type="date" value={from ?? ''} />
+    <FormField id="to" label="To" type="date" value={to ?? ''} error={from && to && from > to ? 'To date is before the From date.' : undefined} />
+    <label class="check"><input type="checkbox" name="late" value="1" checked={flag('late')} /><span>Late only</span></label>
+    <label class="check"><input type="checkbox" name="overdue" value="1" checked={flag('overdue')} /><span>Overdue only</span></label>
+    <label class="check"><input type="checkbox" name="has_error" value="1" checked={flag('has_error')} /><span>With packaging errors</span></label>
+  </FilterBar>
+  {problems.length > 0 && <p class="text-muted" role="status">{problems.join(' ')}</p>}
+  <Pagination page={pageNo} total={list.total} pageSize={PAGE} noun="shipments" />
+  {list.data.length === 0 ? (
+    <EmptyState title="No shipments match these filters" text="Try clearing a filter or widening the date range.">
+      <a class="btn btn--secondary" href="/shipments">Clear filters</a>
+    </EmptyState>
+  ) : (
+    <DataTable caption={`Shipments, ${PAGE} per page, sorted by ${sortLabel}`} columns={columns} sort={sort} dir={dir}>
+        {list.data.map((s: any) => (
+          <tr>
+            <th scope="row" class="cell-id"><a href={`/shipments/${s.shipment_no}`}>{s.shipment_no}</a></th>
+            <td>{s.customer.name}</td>
+            <td>{dateText(s.promise_date)}</td>
+            <td><StatusBadge status={s.status} />{s.status === 'On Hold' && s.hold_reason && <div class="text-small text-muted">{s.hold_reason.label}</div>}</td>
+            <td>{timing(s)}</td>
+            <td class="col-p2">{s.carrier?.name ?? '–'}</td>
+            <td class="col-p2">{s.ship_date ? dateText(s.ship_date) : '–'}</td>
+            <td class="col-p3">{s.customer_po}</td>
+          </tr>
+        ))}
+    </DataTable>
+  )}
+</AppLayout>

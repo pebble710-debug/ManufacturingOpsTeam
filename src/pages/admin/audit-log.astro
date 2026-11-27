@@ -1,0 +1,56 @@
+---
+// S23a Audit log (P-audit, Admin only).
+import AppLayout from '../../layouts/AppLayout.astro';
+import PageHeader from '../../components/PageHeader.astro';
+import FilterBar from '../../components/FilterBar.astro';
+import FormField from '../../components/FormField.astro';
+import Pagination from '../../components/Pagination.astro';
+import EmptyState from '../../components/EmptyState.astro';
+import Alert from '../../components/Alert.astro';
+import { getSql } from '../../lib/db';
+import { listAuditLog } from '../../lib/services/admin';
+import { listLookup } from '../../lib/services/lookups';
+import { HttpError } from '../../lib/http/errors';
+import { fmtTs } from '../../components/inventory/form-utils';
+
+export const prerender = false;
+const sql = getSql();
+const url = new URL(Astro.url);
+for (const k of [...url.searchParams.keys()]) if (!['page', 'user_id', 'action', 'table_name', 'record_id', 'from', 'to'].includes(k)) url.searchParams.delete(k);
+let res: Awaited<ReturnType<typeof listAuditLog>> | null = null;
+let error = '';
+try { res = await listAuditLog(sql, url); } catch (e) {
+  if (e instanceof HttpError && e.status === 422) { error = Object.entries(e.fields ?? {}).map(([k, m]) => `${k.replace(/_/g, ' ')} ${m}`).join('; ') || e.message; Astro.response.status = 422; } else throw e;
+}
+const users = (await listLookup(sql, 'users', {})).data as any[];
+const g = (k: string) => Astro.url.searchParams.get(k) ?? '';
+const summary = (c: unknown) => { if (c === null || c === undefined) return ''; const t = JSON.stringify(c); return t.length > 160 ? t.slice(0, 157) + '...' : t; };
+---
+<AppLayout title="Audit log">
+  <PageHeader title="Audit log" crumbs={[{ label: 'Admin' }, { label: 'Audit log' }]} />
+  <FilterBar label="Filter audit log">
+    <FormField id="user_id" label="User" type="select" value={g('user_id')} placeholderOption="All users" options={users.map((u) => ({ value: String(u.id), label: u.display_name }))} />
+    <FormField id="action" label="Action" value={g('action')} hint="For example SETTINGS_REPORTING_UPDATE." inputClass="input--code" />
+    <FormField id="record_id" label="Record" value={g('record_id')} hint="A number, or SH-, PE-, RC-, CC- number." />
+    <FormField id="from" label="From" type="date" value={g('from')} />
+    <FormField id="to" label="To" type="date" value={g('to')} />
+  </FilterBar>
+  {error && <Alert variant="error" focusOnLoad>{error}</Alert>}
+  {res && (res.total === 0 ? <EmptyState title="No audit entries match" text="Change the filters." /> : (
+    <div class="table-wrap" tabindex="0" role="region" aria-label="Audit log (scrolls sideways on small screens)">
+      <table class="table table--compact">
+        <caption class="visually-hidden">Audit log</caption>
+        <thead><tr><th scope="col">When</th><th scope="col">User</th><th scope="col">Action</th><th scope="col">Table</th><th scope="col">Record</th><th scope="col">Changes</th></tr></thead>
+        <tbody>
+          {res.data.map((a) => (
+            <tr>
+              <th scope="row" class="cell-id">{fmtTs(a.at)}</th><td>{a.user?.display_name ?? 'System'}</td><td class="text-mono">{a.action}</td><td>{a.table_name ?? ''}</td><td>{a.record_id ?? ''}</td>
+              <td class="text-small text-mono">{summary(a.changes)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  ))}
+  {res && <Pagination page={res.page} total={res.total} pageSize={res.page_size} noun="audit entries" />}
+</AppLayout>

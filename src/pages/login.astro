@@ -6,7 +6,10 @@ import ErrorSummary from '../components/ErrorSummary.astro';
 import FormField from '../components/FormField.astro';
 import CsrfField from '../components/CsrfField.astro';
 import { appLocals, safeNextPath } from '../components/locals';
-import { loginWithPassword } from '../components/auth-bridge';
+import { loginWithPassword } from '../lib/services/auth';
+import { sessionCookieName } from '../lib/auth/session';
+import { DEMO_USERS, LOCAL_ADMIN_PASSWORD } from '../lib/seed/demo-credentials';
+import { appEnv } from '../lib/env';
 import type { FieldError } from '../components/types';
 
 export const prerender = false;
@@ -32,14 +35,12 @@ if (Astro.request.method === 'POST') {
   if (fieldErrors.length === 0) {
     let clientKey = 'unknown';
     try { clientKey = Astro.clientAddress; } catch { /* no client address in this runtime */ }
-    const result = await loginWithPassword({ username, password, clientKey });
+    const presentedToken = Astro.cookies.get(sessionCookieName())?.value ?? null;
+    const result = await loginWithPassword({ username, password, clientKey }, { presentedToken });
     if (result.ok) {
       const target = postNext ?? '/dashboard';
       const c = result.sessionCookie;
-      if (typeof c === 'string') {
-        return new Response(null, { status: 303, headers: { Location: target, 'Set-Cookie': c, 'Cache-Control': 'no-store' } });
-      }
-      Astro.cookies.set(c.name, c.value, c.options);
+      Astro.cookies.set(c.name, c.value, c.options as never);
       return Astro.redirect(target, 303);
     }
     // One generic message for wrong password, unknown user and deactivated user (US-001).
@@ -55,15 +56,21 @@ if (Astro.request.method === 'POST') {
 }
 
 const errOf = (id: string) => fieldErrors.find((e) => e.fieldId === id)?.message;
-const accounts = [
-  ['demo.viewer', 'Viewer', 'Read-only guest: look at everything, change nothing'],
-  ['demo.shipper1', 'Shipping', 'Packing a shipment'],
-  ['demo.shipper2', 'Shipping', 'Verifying a shipment packed by shipper1'],
-  ['demo.quality', 'Quality', 'Verifying, holds, root cause'],
-  ['demo.supervisor', 'Supervisor', 'Approvals, cancel, verify'],
-  ['demo.receiver', 'Receiving', 'Receipts, transfers, counts'],
-  ['demo.admin', 'Admin', 'Settings, reporting date, audit, demo reset'],
-];
+// ADR-003 D-13: demo-only passwords are published; demo.admin's only when running locally.
+const GOOD_FOR: Record<string, string> = {
+  'demo.viewer': 'Read-only guest: look at everything, change nothing',
+  'demo.shipper1': 'Packing a shipment',
+  'demo.shipper2': 'Verifying a shipment packed by shipper1',
+  'demo.quality': 'Verifying, holds, root cause',
+  'demo.supervisor': 'Approvals, cancel, verify, cycle counts',
+  'demo.receiver': 'Receipts, transfers, counts',
+  'demo.admin': 'Settings, reporting date, audit, demo reset',
+};
+const local = appEnv() === 'local';
+const accounts = DEMO_USERS.map((u) => ({
+  username: u.username, role: u.role, good: GOOD_FOR[u.username] ?? '',
+  password: u.password ?? (local ? LOCAL_ADMIN_PASSWORD : null),
+}));
 ---
 <AuthLayout title="Sign in" description="Sign in to the Cobalt Ridge Ops demonstration dashboard (fictional data).">
   <section class="card" aria-labelledby="signin-title">
@@ -101,13 +108,13 @@ const accounts = [
     <div class="table-wrap" tabindex="0" role="region" aria-label="Demo accounts (scrolls sideways on small screens)">
       <table class="table table--compact">
         <caption class="visually-hidden">Demo accounts</caption>
-        <thead><tr><th scope="col">Username</th><th scope="col">Role</th><th scope="col">Good for</th></tr></thead>
+        <thead><tr><th scope="col">Username</th><th scope="col">Password (demo-only)</th><th scope="col">Role</th><th scope="col">Good for</th></tr></thead>
         <tbody>
-          {accounts.map(([u, r, g]) => <tr><th scope="row" class="cell-id">{u}</th><td>{r}</td><td>{g}</td></tr>)}
+          {accounts.map((a) => <tr><th scope="row" class="cell-id">{a.username}</th><td class="text-mono">{a.password ?? 'not published'}</td><td>{a.role}</td><td>{a.good}</td></tr>)}
         </tbody>
       </table>
     </div>
-    <p class="text-small text-muted">Demo passwords: see the README (demo-only, never reuse them). <code>demo.admin</code>: sign-in is not published on this site.</p>
+    <p class="text-small text-muted">These passwords are demo-only and fictional; never reuse them anywhere real.{!local && <> The <code>demo.admin</code> sign-in is not published on this site.</>}</p>
   </details>
 
   <p class="text-small text-muted">For security, sessions end after 30 minutes without activity.</p>

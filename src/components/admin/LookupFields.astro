@@ -1,0 +1,19 @@
+---
+// Fields of one lookup record (new or edit). `suffix` keeps ids unique when several edit forms share a page.
+import FormField from '../FormField.astro';
+import { SPECS } from './lookup-specs';
+interface Props { type: string; values?: Record<string, unknown>; errors?: Record<string, string>; suffix?: string; isNew?: boolean }
+const { type, values = {}, errors = {}, suffix = '', isNew = false } = Astro.props;
+const text = (v: unknown) => (v === undefined || v === null ? '' : String(v));
+---
+<div class="grid grid--2">
+  {SPECS[type].map((f) => f.kind === 'bool' ? (
+    <div class="form-field">
+      <label class="check"><input type="checkbox" id={`${f.name}${suffix}`} name={f.name} value="true" checked={values[f.name] === undefined ? isNew || f.name === 'active' : values[f.name] === true || values[f.name] === 'true'} /><span>{f.label}</span></label>
+      {errors[f.name] && <p class="form-field__error" id={`${f.name}${suffix}-err`}><span>{f.label} {errors[f.name]}</span></p>}
+    </div>
+  ) : (
+    <FormField id={`${f.name}${suffix}`} name={f.name} label={f.label} type={f.kind === 'select' ? 'select' : 'text'} required={f.required} hint={f.hint}
+      value={text(values[f.name])} placeholderOption={f.kind === 'select' ? 'Choose' : undefined} options={(f.options ?? []).map((o) => ({ value: o, label: o }))} error={errors[f.name] ? `${errors[f.name]}` : undefined} />
+  ))}
+</div>

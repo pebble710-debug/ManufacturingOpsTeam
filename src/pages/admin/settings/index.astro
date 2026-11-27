@@ -1,0 +1,8 @@
+---
+// S22 Settings (P-settings).
+import SettingsView from '../../../components/admin/SettingsView.astro';
+import { settingsPage } from '../../../components/admin/settings-actions';
+export const prerender = false;
+const r = await settingsPage(Astro, 'view');
+---
+<SettingsView settings={r.settings} failure={null} failedForm="" />

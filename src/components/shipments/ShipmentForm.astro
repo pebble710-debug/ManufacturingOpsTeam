@@ -1,0 +1,55 @@
+---
+// S04 form body, shared by /shipments/new and /shipments/{no}/edit. Lines are server-rendered rows;
+// "Add another line" and "Remove line" are submit buttons that re-render without writing (contract 1.12).
+import CsrfField from '../CsrfField.astro';
+import FormField from '../FormField.astro';
+import { fid, v } from './forms';
+interface Opt { value: string; label: string }
+interface Props {
+  action: string; submitLabel: string; cancelHref: string;
+  values: Record<string, any>; lines: Record<string, any>[]; fields: Record<string, string>;
+  customers: Opt[]; parts: Opt[]; reportingDate: string; editing?: boolean;
+}
+const { action, submitLabel, cancelHref, values, lines, fields, customers, parts, reportingDate, editing = false } = Astro.props;
+const err = (k: string) => fields[k];
+const doc = (k: string) => values[k] === true || values[k] === 'true';
+const DOCS: [string, string][] = [['doc_packing_slip', 'Packing slip prepared'], ['doc_bol', 'Bill of lading prepared'], ['doc_coc', 'C of C prepared'], ['doc_labels', 'Labels printed']];
+---
+<form class="form" method="post" action={action} novalidate>
+  <CsrfField />
+  <h2 class="section-title">Header</h2>
+  <FormField id="customer_id" label="Customer" type="select" required value={v(values, 'customer_id')} placeholderOption="Select customer" options={customers} error={err('customer_id')} />
+  <FormField id="customer_po" label="Customer PO" required value={v(values, 'customer_po')} maxlength={40} error={err('customer_po')} />
+  <div class="form-grid form-grid--2">
+    <FormField id="order_date" label="Order date" type="date" required value={v(values, 'order_date', reportingDate)} hint={`Defaults to the reporting date, ${reportingDate}.`} error={err('order_date')} />
+    <FormField id="requested_date" label="Requested date" type="date" required value={v(values, 'requested_date')} error={err('requested_date')} />
+    <FormField id="promise_date" label="Promise date" type="date" required value={v(values, 'promise_date')} hint="Must be on or after the order date." error={err('promise_date')} />
+    <FormField id="service_level" label="Service level" value={v(values, 'service_level')} maxlength={40} error={err('service_level')} />
+  </div>
+
+  <h2 class="section-title">Lines</h2>
+  {err('lines') && <p class="form-field__error" id="lines-err"><span>Lines: {err('lines')}</span></p>}
+  <ul class="line-rows">
+    {lines.map((l, i) => (
+      <li class="line-row">
+        <p class="line-row__title">Line {i + 1}</p>
+        {l.id && <input type="hidden" name={`lines[${i}][id]`} value={l.id} />}
+        <FormField id={fid(`lines[${i}].part_id`)} name={`lines[${i}][part_id]`} label={`Part, line ${i + 1}`} type="select" required value={v(l, 'part_id')} placeholderOption="Select part" options={parts} error={err(`lines[${i}].part_id`)} />
+        <FormField id={fid(`lines[${i}].qty_ordered`)} name={`lines[${i}][qty_ordered]`} label={`Quantity ordered, line ${i + 1}`} type="number" min={1} inputmode="numeric" required value={v(l, 'qty_ordered')} error={err(`lines[${i}].qty_ordered`)} />
+        <FormField id={fid(`lines[${i}].lot_number`)} name={`lines[${i}][lot_number]`} label={`Lot (optional), line ${i + 1}`} value={v(l, 'lot_number')} inputClass="input--code" error={err(`lines[${i}].lot_number`)} />
+        <div class="line-row__actions"><button class="btn btn--secondary" type="submit" name="remove_line" value={String(i)} formnovalidate>Remove line {i + 1}</button></div>
+      </li>
+    ))}
+  </ul>
+  <button class="btn btn--secondary" type="submit" name="add_line" value="1" formnovalidate>Add another line</button>
+
+  <h2 class="section-title">Documents (flags)</h2>
+  <div class="choice-group choice-group--inline">
+    {DOCS.map(([k, t]) => <label class="check"><input type="checkbox" name={k} value="true" checked={doc(k)} /><span>{t}</span></label>)}
+  </div>
+  <FormField id="notes" label="Notes (optional)" type="textarea" value={v(values, 'notes')} maxlength={1000} error={err('notes')} />
+  <div class="action-row form-actions">
+    <button class="btn btn--primary" type="submit">{submitLabel}</button>
+    <a class="btn btn--link" href={cancelHref}>Cancel</a>
+  </div>
+</form>

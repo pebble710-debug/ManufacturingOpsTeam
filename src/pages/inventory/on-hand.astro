@@ -1,0 +1,55 @@
+---
+// S15 On-hand (P-on-hand).
+import AppLayout from '../../layouts/AppLayout.astro';
+import PageHeader from '../../components/PageHeader.astro';
+import FilterBar from '../../components/FilterBar.astro';
+import FormField from '../../components/FormField.astro';
+import DataTable from '../../components/DataTable.astro';
+import Pagination from '../../components/Pagination.astro';
+import EmptyState from '../../components/EmptyState.astro';
+import { getSql } from '../../lib/db';
+import { listOnHand } from '../../lib/services/inventory';
+import { listLookup } from '../../lib/services/lookups';
+import { listQuery, qs, qsInt } from '../../components/inventory/form-utils';
+
+export const prerender = false;
+const sql = getSql();
+const url = Astro.url;
+const lq = listQuery(url, { part_number: 'p.part_number', location: 'l.code', lot_number: 'oh.lot_number', qty_on_hand: 'oh.qty_on_hand' }, 'part_number', false);
+const includeZero = qs(url, 'include_zero') === 'true';
+const res = await listOnHand(sql, {
+  part_id: qsInt(url, 'part_id'), location_id: qsInt(url, 'location_id'), lot_number: qs(url, 'lot_number').toUpperCase() || undefined,
+  include_zero: includeZero, sortCol: lq.sortCol, desc: lq.desc, limit: lq.pageSize, offset: lq.offset,
+});
+const parts = (await listLookup(sql, 'parts', { active: 'all' })).data as any[];
+const locations = (await listLookup(sql, 'locations', { active: 'all' })).data as any[];
+const csvQs = new URLSearchParams(url.searchParams); csvQs.delete('page'); csvQs.delete('sort'); csvQs.delete('dir');
+const csvHref = `/api/v1/reports/R4?format=csv${csvQs.toString() ? '&' + [...csvQs].filter(([k]) => ['part_id', 'location_id', 'lot_number', 'include_zero'].includes(k)).map(([k, v]) => `${k}=${encodeURIComponent(v)}`).join('&') : ''}`;
+---
+<AppLayout title="On-hand inventory">
+  <PageHeader title="On-hand inventory" crumbs={[{ label: 'Inventory' }, { label: 'On-hand' }]}>
+    <a slot="actions" class="btn btn--secondary" href={csvHref}>Download CSV</a>
+  </PageHeader>
+  <FilterBar label="Filter on-hand">
+    <FormField id="part_id" label="Part" type="select" value={qs(url, 'part_id')} placeholderOption="All parts" options={parts.map((p) => ({ value: String(p.id), label: p.part_number }))} />
+    <FormField id="location_id" label="Location" type="select" value={qs(url, 'location_id')} placeholderOption="All locations" options={locations.map((l) => ({ value: String(l.id), label: `${l.code} (${l.type})` }))} />
+    <FormField id="lot_number" label="Lot" value={qs(url, 'lot_number')} inputClass="input--code" />
+    <FormField id="include_zero" label="Zero quantities" type="select" value={includeZero ? 'true' : ''} placeholderOption="Hide zero rows" options={[{ value: 'true', label: 'Include zero rows' }]} />
+  </FilterBar>
+  {res.total === 0 ? <EmptyState title="No stock matches" text="Change the filters." /> : (
+    <DataTable caption="On-hand by part, location and lot" sort={lq.sortKey} dir={lq.desc ? 'desc' : 'asc'} columns={[
+      { key: 'part_number', label: 'Part', sortable: true }, { key: 'desc', label: 'Description', priority: 2 }, { key: 'abc', label: 'ABC', priority: 3 },
+      { key: 'location', label: 'Location', sortable: true }, { key: 'lot_number', label: 'Lot', sortable: true },
+      { key: 'qty_on_hand', label: 'On hand', sortable: true, numeric: true },
+    ]}>
+      {res.data.map((r) => (
+        <tr>
+          <th scope="row" class="cell-id">{r.part.part_number}</th><td class="col-p2">{r.part.description}</td><td class="col-p3">{r.part.abc_class}</td>
+          <td>{r.location.code}{r.location.type === 'Hold' && <> <span class="badge badge--warning">Hold</span></>}</td>
+          <td><a href={`/inventory/lot-trace?lot=${encodeURIComponent(r.lot_number)}`}>{r.lot_number}</a></td><td class="numeric">{r.qty_on_hand}</td>
+        </tr>
+      ))}
+    </DataTable>
+  )}
+  <Pagination page={lq.page} total={res.total} noun="stock rows" />
+</AppLayout>

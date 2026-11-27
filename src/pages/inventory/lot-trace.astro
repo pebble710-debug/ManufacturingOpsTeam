@@ -1,0 +1,61 @@
+---
+// S20 Lot trace (P-lot-trace): lot -> backward (supplier receipts), movements, forward (customer shipments).
+import AppLayout from '../../layouts/AppLayout.astro';
+import PageHeader from '../../components/PageHeader.astro';
+import FormField from '../../components/FormField.astro';
+import Alert from '../../components/Alert.astro';
+import EmptyState from '../../components/EmptyState.astro';
+import ErrorSummary from '../../components/ErrorSummary.astro';
+import { getSql } from '../../lib/db';
+import { lotTrace } from '../../lib/services/inventory';
+import { HttpError } from '../../lib/http/errors';
+import { qs, fmtTs } from '../../components/inventory/form-utils';
+
+export const prerender = false;
+const lot = qs(Astro.url, 'lot');
+let trace: Awaited<ReturnType<typeof lotTrace>> | null = null;
+let error = '';
+if (lot) {
+  try { trace = await lotTrace(getSql(), lot); } catch (e) {
+    if (e instanceof HttpError && e.status === 422) { error = `Lot ${e.fields?.lot_number ?? 'is invalid'}`; Astro.response.status = 422; } else throw e;
+  }
+}
+---
+<AppLayout title="Lot trace">
+  <PageHeader title="Lot trace" crumbs={[{ label: 'Inventory' }, { label: 'Lot trace' }]} />
+  <form class="filter-bar" method="get" role="search" aria-label="Look up a lot">
+    <ErrorSummary errors={error ? [{ fieldId: 'lot', message: error }] : []} />
+    <div class="filter-bar__fields"><FormField id="lot" label="Lot number" required value={lot} error={error || undefined} hint="For example L2611-004." inputClass="input--code" /></div>
+    <div class="filter-bar__actions"><button class="btn btn--primary" type="submit">Trace lot</button></div>
+  </form>
+  {!lot && <EmptyState title="Enter a lot number" text="You will see where the lot came from (supplier receipts) and where it went (customer shipments)." />}
+  {trace && !trace.found && <Alert variant="warning" lead="Not found:">No receipts, movements or shipments for lot {trace.lot_number}.</Alert>}
+  {trace && trace.found && (
+    <div class="stack stack--lg">
+      <section class="card" aria-labelledby="sum-h"><h2 id="sum-h" class="card__title">Lot {trace.lot_number}</h2>
+        <dl class="detail-list"><dt>Received</dt><dd>{trace.summary.received_total}</dd><dt>Shipped</dt><dd>{trace.summary.shipped_total}</dd>
+          <dt>Scrapped</dt><dd>{trace.summary.scrapped_total}</dd><dt>Adjusted</dt><dd>{trace.summary.adjusted_total}</dd><dt>On hand now</dt><dd>{trace.summary.on_hand_total}</dd></dl>
+        <p><a class="btn btn--secondary" href={`/api/v1/reports/R7?format=csv&lot_number=${encodeURIComponent(trace.lot_number)}`}>Download CSV</a></p>
+      </section>
+      <section aria-labelledby="back-h"><h2 id="back-h">Backward: received from</h2>
+        {trace.backward.length === 0 ? <p class="text-muted">No receipt recorded (produced in house).</p> : (
+          <div class="table-wrap" tabindex="0" role="region" aria-label="Receipts for this lot"><table class="table table--compact"><caption class="visually-hidden">Receipts</caption>
+            <thead><tr><th scope="col">Receipt</th><th scope="col">Supplier</th><th scope="col">PO</th><th scope="col">Part</th><th scope="col" class="numeric">Qty</th><th scope="col">Inspection</th><th scope="col">Arrived</th></tr></thead>
+            <tbody>{trace.backward.map((r) => <tr><th scope="row" class="cell-id">{r.receipt_no}</th><td>{r.supplier.name}</td><td>{r.supplier_po}</td><td>{r.part.part_number}</td><td class="numeric">{r.qty_received}</td><td>{r.inspection_status}</td><td>{fmtTs(r.arrived_at)}</td></tr>)}</tbody></table></div>
+        )}
+      </section>
+      <section aria-labelledby="mov-h"><h2 id="mov-h">Movements</h2>
+        <div class="table-wrap" tabindex="0" role="region" aria-label="Movements for this lot"><table class="table table--compact"><caption class="visually-hidden">Movements</caption>
+          <thead><tr><th scope="col">When</th><th scope="col">Type</th><th scope="col">Location</th><th scope="col" class="numeric">Qty change</th><th scope="col">Reason</th></tr></thead>
+          <tbody>{trace.movements.map((m) => <tr><th scope="row" class="cell-id">{fmtTs(m.txn_at)}</th><td>{m.txn_type}</td><td>{m.location.code}</td><td class="numeric">{m.qty_change > 0 ? `+${m.qty_change}` : m.qty_change}</td><td>{m.reason_code ?? ''}</td></tr>)}</tbody></table></div>
+      </section>
+      <section aria-labelledby="fwd-h"><h2 id="fwd-h">Forward: shipped to</h2>
+        {trace.forward.length === 0 ? <p class="text-muted">Not shipped yet.</p> : (
+          <div class="table-wrap" tabindex="0" role="region" aria-label="Shipments for this lot"><table class="table table--compact"><caption class="visually-hidden">Shipments</caption>
+            <thead><tr><th scope="col">Shipment</th><th scope="col">Customer</th><th scope="col">Ship date</th><th scope="col" class="numeric">Qty</th><th scope="col">Carrier</th><th scope="col">Tracking</th></tr></thead>
+            <tbody>{trace.forward.map((f) => <tr><th scope="row" class="cell-id"><a href={`/shipments/${f.shipment_no}`}>{f.shipment_no}</a></th><td>{f.customer.name}</td><td>{f.ship_date}</td><td class="numeric">{f.qty_shipped}</td><td>{f.carrier?.name ?? ''}</td><td>{f.tracking_number ?? ''}</td></tr>)}</tbody></table></div>
+        )}
+      </section>
+    </div>
+  )}
+</AppLayout>

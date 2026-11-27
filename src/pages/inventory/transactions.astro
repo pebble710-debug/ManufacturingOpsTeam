@@ -1,0 +1,54 @@
+---
+// S15a Inventory transactions ledger (read-only, append-only).
+import AppLayout from '../../layouts/AppLayout.astro';
+import PageHeader from '../../components/PageHeader.astro';
+import FilterBar from '../../components/FilterBar.astro';
+import FormField from '../../components/FormField.astro';
+import DataTable from '../../components/DataTable.astro';
+import Pagination from '../../components/Pagination.astro';
+import EmptyState from '../../components/EmptyState.astro';
+import { getSql } from '../../lib/db';
+import { listTransactions } from '../../lib/services/inventory';
+import { listLookup } from '../../lib/services/lookups';
+import { listQuery, qs, qsInt, qsDate, fmtTs } from '../../components/inventory/form-utils';
+
+export const prerender = false;
+const TYPES = ['RECEIPT', 'SHIP', 'TRANSFER', 'PRODUCTION_COMPLETE', 'SCRAP', 'ADJUST'];
+const sql = getSql();
+const url = Astro.url;
+const lq = listQuery(url, { txn_at: 't.txn_at', id: 't.id' }, 'txn_at', true);
+const type = qs(url, 'txn_type');
+const res = await listTransactions(sql, {
+  part_id: qsInt(url, 'part_id'), lot_number: qs(url, 'lot_number').toUpperCase() || undefined, txn_type: TYPES.includes(type) ? [type] : undefined,
+  location_id: qsInt(url, 'location_id'), from: qsDate(url, 'from'), to: qsDate(url, 'to'), sortCol: lq.sortCol, desc: lq.desc, limit: lq.pageSize, offset: lq.offset,
+});
+const parts = (await listLookup(sql, 'parts', { active: 'all' })).data as any[];
+const locations = (await listLookup(sql, 'locations', { active: 'all' })).data as any[];
+---
+<AppLayout title="Inventory transactions">
+  <PageHeader title="Inventory transactions" crumbs={[{ label: 'Inventory' }, { label: 'Transactions' }]} />
+  <p class="text-muted">The ledger is append-only. Corrections are new ADJUST entries from an approved cycle count.</p>
+  <FilterBar label="Filter transactions">
+    <FormField id="txn_type" label="Type" type="select" value={type} placeholderOption="All types" options={TYPES.map((v) => ({ value: v, label: v }))} />
+    <FormField id="part_id" label="Part" type="select" value={qs(url, 'part_id')} placeholderOption="All parts" options={parts.map((p) => ({ value: String(p.id), label: p.part_number }))} />
+    <FormField id="location_id" label="Location" type="select" value={qs(url, 'location_id')} placeholderOption="All locations" options={locations.map((l) => ({ value: String(l.id), label: l.code }))} />
+    <FormField id="lot_number" label="Lot" value={qs(url, 'lot_number')} inputClass="input--code" />
+    <FormField id="from" label="From" type="date" value={qsDate(url, 'from') ?? ''} />
+    <FormField id="to" label="To" type="date" value={qsDate(url, 'to') ?? ''} />
+  </FilterBar>
+  {res.total === 0 ? <EmptyState title="No transactions match" text="Change the filters." /> : (
+    <DataTable caption="Inventory transactions" sort={lq.sortKey} dir={lq.desc ? 'desc' : 'asc'} columns={[
+      { key: 'txn_at', label: 'When', sortable: true }, { key: 'type', label: 'Type' }, { key: 'part', label: 'Part' }, { key: 'location', label: 'Location' },
+      { key: 'lot', label: 'Lot' }, { key: 'qty', label: 'Qty change', numeric: true }, { key: 'reason', label: 'Reason / note', priority: 2 },
+    ]}>
+      {res.data.map((t) => (
+        <tr>
+          <th scope="row" class="cell-id">{fmtTs(t.txn_at)}</th><td>{t.txn_type}</td><td>{t.part.part_number}</td><td>{t.location.code}</td>
+          <td><a href={`/inventory/lot-trace?lot=${encodeURIComponent(t.lot_number)}`}>{t.lot_number}</a></td>
+          <td class="numeric">{t.qty_change > 0 ? `+${t.qty_change}` : t.qty_change}</td><td class="col-p2">{t.reason_code?.label ?? ''}{t.note ? ` ${t.note}` : ''}</td>
+        </tr>
+      ))}
+    </DataTable>
+  )}
+  <Pagination page={lq.page} total={res.total} noun="transactions" />
+</AppLayout>

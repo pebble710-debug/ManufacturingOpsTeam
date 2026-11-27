@@ -1,0 +1,49 @@
+---
+// S23 Demo reset (P-demo-reset / F-demo-reset). The route table answers 404 when DEMO_RESET_ENABLED is off;
+// this page also renders a disabled explanation if it is ever reached with the flag off.
+import AppLayout from '../../layouts/AppLayout.astro';
+import PageHeader from '../../components/PageHeader.astro';
+import FormField from '../../components/FormField.astro';
+import ErrorSummary from '../../components/ErrorSummary.astro';
+import Alert from '../../components/Alert.astro';
+import CsrfField from '../../components/CsrfField.astro';
+import { getSql } from '../../lib/db';
+import { handleForm } from '../../lib/http/form-handler';
+import { demoReset } from '../../lib/services/admin';
+import { isDemoResetEnabled } from '../../lib/env';
+import { z } from '../../lib/validation/common';
+import { formCtx, fieldErrors, alertText, isAlert, type Failure } from '../../components/inventory/form-utils';
+
+export const prerender = false;
+const enabled = isDemoResetEnabled();
+let failure: Failure | null = null;
+if (enabled && Astro.request.method === 'POST') {
+  const out = await handleForm(formCtx(Astro), {
+    schema: z.object({ confirm: z.string({ error: 'is required' }) }).strict(),
+    run: (s, u, input) => demoReset(s, u, input),
+    redirectTo: '/login?reason=reset',
+    sql: getSql(),
+  });
+  if (out.ok) { Astro.cookies.delete('flash', { path: '/' }); return out.response; }
+  failure = out;
+  Astro.response.status = out.status;
+}
+---
+<AppLayout title="Demo reset">
+  <PageHeader title="Demo reset" crumbs={[{ label: 'Admin' }, { label: 'Demo reset' }]} />
+  {!enabled ? (
+    <Alert variant="info" lead="Disabled:">Demo reset is turned off on this site. It can only be enabled by the site owner with the DEMO_RESET_ENABLED setting.</Alert>
+  ) : (
+    <section class="card stack" aria-labelledby="reset-h">
+      <h2 id="reset-h" class="card__title">Reset all demo data</h2>
+      <Alert variant="warning" lead="This cannot be undone:">All shipments, quality records, inventory, counts, sessions and the audit log are replaced with the original fictional seed data. Everyone is signed out. A reset can run once every 10 minutes.</Alert>
+      {isAlert(failure) && <Alert variant="error" focusOnLoad>{alertText(failure)}</Alert>}
+      <form class="form stack" method="post" action="/admin/demo-reset" novalidate>
+        <CsrfField />
+        <ErrorSummary errors={fieldErrors(failure, { confirm: 'Confirmation' })} />
+        <FormField id="confirm" label="Type RESET DEMO DATA to confirm" required autocomplete="off" error={failure?.fields.confirm} inputClass="input--code" />
+        <div class="action-row form-actions"><button class="btn btn--danger" type="submit">Reset demo data</button><a class="btn btn--link" href="/dashboard">Cancel</a></div>
+      </form>
+    </section>
+  )}
+</AppLayout>

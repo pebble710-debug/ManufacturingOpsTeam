@@ -1,0 +1,15 @@
+---
+// S08 cancel: reason required, danger button naming the shipment.
+import CsrfField from '../CsrfField.astro';
+import FormField from '../FormField.astro';
+import { v } from './forms';
+interface Props { no: string; values?: Record<string, any>; fields?: Record<string, string> }
+const { no, values = {}, fields = {} } = Astro.props;
+---
+<form class="form" method="post" action={`/shipments/${no}/actions/cancel`} novalidate>
+  <CsrfField />
+  <p>Cancelling locks {no}. It cannot be shipped afterwards.</p>
+  <FormField id="reason" label="Reason for cancelling" type="textarea" rows={2} required value={v(values, 'reason')} maxlength={500} error={fields.reason} />
+  <FormField id="note" label="Note (optional)" type="textarea" rows={2} value={v(values, 'note')} maxlength={500} error={fields.note} />
+  <div class="action-row form-actions"><button class="btn btn--danger" type="submit">Cancel {no}</button></div>
+</form>

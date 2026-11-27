@@ -1,0 +1,102 @@
+---
+// S10 Log packaging error (F4). Step 0 asks for the shipment (GET form); the main form posts to /quality/errors/new (F-error-new).
+import AppLayout from '../../../layouts/AppLayout.astro';
+import PageHeader from '../../../components/PageHeader.astro';
+import StatusBadge from '../../../components/StatusBadge.astro';
+import Alert from '../../../components/Alert.astro';
+import CsrfField from '../../../components/CsrfField.astro';
+import FormField from '../../../components/FormField.astro';
+import Forbidden from '../../../components/Forbidden.astro';
+import FormAlerts from '../../../components/shipments/FormAlerts.astro';
+import { appLocals } from '../../../components/locals';
+import { getSql } from '../../../lib/db';
+import { findShipment, getShipmentDetail } from '../../../lib/repos/shipments';
+import { createError } from '../../../lib/services/quality';
+import { mayLogErrorStage } from '../../../lib/services/rules';
+import { CATEGORIES, SEVERITIES, SUBTYPES, createErrorSchema } from '../../../lib/validation/quality';
+import { can, emptyState, flash as takeF, submit, toLocalInput, v, type FormState } from '../../../components/shipments/forms';
+
+export const prerender = false;
+const { user } = appLocals(Astro.locals);
+if (!user) return Astro.redirect('/login?reason=required&next=/quality/errors/new');
+const allowed = can(Astro.locals, 'error.log');
+let state: FormState = emptyState;
+if (allowed && Astro.request.method === 'POST') {
+  const r = await submit(Astro, {
+    schema: createErrorSchema,
+    prepare: (i) => ({ ...i, ...(i.packaging_related === 'true' ? { packaging_related: true } : i.packaging_related === 'false' ? { packaging_related: false } : { packaging_related: undefined }) }),
+    run: (s, u, input) => createError(s, u, input), redirectTo: (e: any) => `/quality/errors/${e.error_no}`,
+    flash: (e: any) => `Saved: packaging error ${e.error_no} logged.`,
+  });
+  if ('response' in r) return r.response;
+  state = r.state;
+}
+const sql = getSql();
+const flash = takeF(Astro);
+const wanted = (state.values.shipment_no as string | undefined) ?? Astro.url.searchParams.get('shipment') ?? '';
+const row = /^SH-\d{4,}$/.test(wanted) ? await findShipment(sql, { no: wanted }) : undefined;
+const s = row ? await getShipmentDetail(sql, Number(row.id), user) : null;
+const vals = state.values;
+const err = (k: string) => state.fields[k];
+const after = s?.status === 'Shipped';
+const stageOk = s ? mayLogErrorStage(user.role, after ? 'After ship' : 'Before ship', s.status as any) : false;
+const stage = after ? 'After ship' : 'Before ship';
+const bys = after ? ['Quality', 'Customer'] : ['Packer', 'Verifier', 'Quality'];
+const SEV_HELP: Record<string, string> = {
+  Low: 'caught and fixed with no effect on the customer', Medium: 'fixed but needed rework or a re-check', High: 'shipment cannot ship until corrected', Critical: 'could cause a safety, regulatory or serious customer problem (illustrative wording)',
+};
+const now = toLocalInput(new Date(`${Astro.locals.reportingDate || new Date().toISOString().slice(0, 10)}T${new Date().toISOString().slice(11, 16)}:00Z`));
+---
+<AppLayout title="Log packaging error">
+  <PageHeader title={s ? `Log packaging error: ${s.shipment_no}` : 'Log packaging error'} crumbs={[{ label: 'Packaging errors', href: '/quality/errors' }, { label: 'Log packaging error' }]} operational>
+    {s && <Fragment slot="meta"><StatusBadge status={s.status} /> {s.customer.name}</Fragment>}
+  </PageHeader>
+  <FormAlerts flash={flash} state={state} />
+  {!allowed ? <Forbidden role={user.role} action="log packaging errors" /> : !s ? (
+    <form class="form" method="get" action="/quality/errors/new">
+      <h2 class="section-title">Which shipment?</h2>
+      {wanted && <Alert variant="error" lead="Problem:">No shipment {wanted} was found.</Alert>}
+      <FormField id="shipment" label="Shipment number" required hint="For example SH-1042" value={wanted} />
+      <div class="action-row form-actions"><button class="btn btn--primary" type="submit">Continue</button></div>
+    </form>
+  ) : !stageOk ? (
+    <Alert variant="info" lead="Note:">{s.status === 'Shipped' ? 'Only Quality or Supervisor can log errors found after shipping.' : s.status === 'Cancelled' ? 'This shipment is cancelled; errors cannot be logged against it.' : 'Your role cannot log errors for this shipment.'} <a href={`/shipments/${s.shipment_no}`}>Back to {s.shipment_no}</a></Alert>
+  ) : (
+    <form class="form" method="post" action="/quality/errors/new" novalidate>
+      <CsrfField />
+      <input type="hidden" name="shipment_no" value={s.shipment_no} />
+      {['Packing', 'Verified'].includes(s.status) && <Alert variant="warning" lead="Check:">Logging an error before ship moves {s.shipment_no} to Rework.</Alert>}
+      <FormField id="shipment_line_id" label="Shipment line (optional)" type="select" value={v(vals, 'shipment_line_id')} placeholderOption="All lines"
+        options={(s.lines as any[]).map((l) => ({ value: String(l.id), label: `Line ${l.line_no}: ${l.part.part_number}` }))} error={err('shipment_line_id')} />
+      <FormField id="detected_at" label="Detected at (UTC)" type="datetime-local" value={v(vals, 'detected_at', now)} hint="Defaults to now on the reporting date." error={err('detected_at')} />
+      <fieldset class="fieldset" id="detected_by_role"><legend>Detected by <span class="form-field__required">(required)</span></legend>
+        <div class="choice-group choice-group--inline">{bys.map((b) => <label class="choice"><input type="radio" name="detected_by_role" value={b} checked={vals.detected_by_role === b} /><span class="choice__text">{b}</span></label>)}</div>
+        {err('detected_by_role') && <p class="form-field__error"><span>{err('detected_by_role')}</span></p>}
+      </fieldset>
+      <fieldset class="fieldset"><legend>Detected stage <span class="form-field__required">(required)</span></legend>
+        <label class="choice"><input type="radio" name="detected_stage" value={stage} checked /><span class="choice__text">{after ? 'After ship (customer-found)' : 'Before ship'}</span></label>
+      </fieldset>
+      <FormField id="category" label="Category" type="select" required value={v(vals, 'category')} placeholderOption="Select category" options={CATEGORIES.map((c) => ({ value: c, label: c }))} hint={'Choose "Other" only if nothing fits; Quality will review and recategorise it.'} error={err('category')} />
+      <FormField id="paperwork_subtype" label="Paperwork type (required when category is Paperwork)" type="select" value={v(vals, 'paperwork_subtype')} placeholderOption="Not paperwork" options={SUBTYPES.map((c) => ({ value: c, label: c }))} error={err('paperwork_subtype')} />
+      <fieldset class="fieldset" id="severity"><legend>Severity <span class="form-field__required">(required)</span></legend>
+        <div class="choice-group">{SEVERITIES.map((sv) => <label class="choice"><input type="radio" name="severity" value={sv} checked={vals.severity === sv} /><span class="choice__text">{sv}: {SEV_HELP[sv]}</span></label>)}</div>
+        {err('severity') && <p class="form-field__error"><span>{err('severity')}</span></p>}
+      </fieldset>
+      <FormField id="description" label="Description" type="textarea" required maxlength={1000} value={v(vals, 'description')} error={err('description')} />
+      {after && (
+        <fieldset class="fieldset"><legend>Packaging related?</legend>
+          <div class="choice-group choice-group--inline">
+            <label class="choice"><input type="radio" name="packaging_related" value="true" checked={vals.packaging_related !== false && vals.packaging_related !== 'false'} /><span class="choice__text">Yes (default)</span></label>
+            <label class="choice"><input type="radio" name="packaging_related" value="false" checked={vals.packaging_related === 'false' || vals.packaging_related === false} /><span class="choice__text">No, not packaging related</span></label>
+          </div>
+          {err('packaging_related') && <p class="form-field__error"><span>{err('packaging_related')}</span></p>}
+        </fieldset>
+      )}
+      {after && <FormField id="packaging_related_reason" label="Why is it not packaging related? (required when No)" type="textarea" rows={2} maxlength={500} value={v(vals, 'packaging_related_reason')} error={err('packaging_related_reason')} />}
+      <div class="action-row form-actions">
+        <button class="btn btn--primary" type="submit">Save packaging error</button>
+        <a class="btn btn--link" href={`/shipments/${s.shipment_no}`}>Cancel</a>
+      </div>
+    </form>
+  )}
+</AppLayout>

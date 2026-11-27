@@ -1,0 +1,101 @@
+---
+// S05a Correct shipment details (Supervisor, UD-3, E-53). Status, ledger and verification records never change here.
+import AppLayout from '../../../layouts/AppLayout.astro';
+import PageHeader from '../../../components/PageHeader.astro';
+import StatusBadge from '../../../components/StatusBadge.astro';
+import Alert from '../../../components/Alert.astro';
+import CsrfField from '../../../components/CsrfField.astro';
+import FormField from '../../../components/FormField.astro';
+import FormAlerts from '../../../components/shipments/FormAlerts.astro';
+import Forbidden from '../../../components/Forbidden.astro';
+import { appLocals } from '../../../components/locals';
+import { getSql } from '../../../lib/db';
+import { findShipment, getShipmentDetail } from '../../../lib/repos/shipments';
+import { correctShipment } from '../../../lib/services/shipments';
+import { correctSchema } from '../../../lib/validation/shipments';
+import { listLookup } from '../../../lib/services/lookups';
+import { can, emptyState, fid, flash as takeF, submit, v, type FormState } from '../../../components/shipments/forms';
+
+export const prerender = false;
+const { user } = appLocals(Astro.locals);
+const no = Astro.params.no!;
+if (!user) return Astro.redirect(`/login?reason=required&next=/shipments/${no}/correct`);
+const sql = getSql();
+const row = /^SH-\d{4,}$/.test(no) ? await findShipment(sql, { no }) : undefined;
+if (!row) return Astro.rewrite('/404');
+const allowed = can(Astro.locals, 'shipment.correct');
+let state: FormState = emptyState;
+if (allowed && Astro.request.method === 'POST') {
+  const r = await submit(Astro, {
+    schema: correctSchema, booleans: ['doc_packing_slip', 'doc_bol', 'doc_coc', 'doc_labels'], run: (s, u, input) => correctShipment(s, u, no, input),
+    redirectTo: `/shipments/${no}`, flash: 'Correction saved.',
+  });
+  if ('response' in r) return r.response;
+  state = r.state;
+}
+const s = (await getShipmentDetail(sql, Number(row.id), user))!;
+const flash = takeF(Astro);
+const shipped = s.status === 'Shipped';
+const carriers = (await listLookup(sql, 'carriers', {})).data as any[];
+const lateReasons = (await listLookup(sql, 'reason-codes', { category: 'late' })).data.map((r: any) => ({ value: String(r.id), label: r.label }));
+const posted = state.kind === 'none' ? null : state.values;
+const cur: Record<string, any> = posted ?? {
+  customer_po: s.customer_po, requested_date: s.requested_date, promise_date: s.promise_date, ship_date: s.ship_date, carrier_id: s.carrier?.id, tracking_number: s.tracking_number,
+  service_level: s.service_level, packages_count: s.packages_count, total_weight_lb: s.total_weight_lb, late_reason_id: s.late_reason?.id, notes: s.notes,
+  doc_packing_slip: s.doc_packing_slip, doc_bol: s.doc_bol, doc_coc: s.doc_coc, doc_labels: s.doc_labels,
+};
+const err = (k: string) => state.fields[k];
+const DOCS: [string, string][] = [['doc_packing_slip', 'Packing slip prepared'], ['doc_bol', 'Bill of lading prepared'], ['doc_coc', 'C of C prepared'], ['doc_labels', 'Labels printed']];
+---
+<AppLayout title={`Correct ${no}`}>
+  <PageHeader title={`Correct details: ${no}`} crumbs={[{ label: 'Shipments', href: '/shipments' }, { label: no, href: `/shipments/${no}` }, { label: 'Correct details' }]} operational>
+    <Fragment slot="meta"><StatusBadge status={s.status} /></Fragment>
+  </PageHeader>
+  <FormAlerts flash={flash} state={state} />
+  {!allowed ? <Forbidden role={user.role} action="correct shipment details" /> : !['Shipped', 'Cancelled'].includes(s.status) ? (
+    <Alert variant="info" lead="Note:">Only Shipped or Cancelled shipments are corrected here. {no} is {s.status}. <a href={`/shipments/${no}/edit`}>Edit it instead</a>.</Alert>
+  ) : (
+    <>
+      <Alert variant="info" lead="Note:">A correction changes only these details. Status, status history, the inventory ledger and verification records are not changed. Inventory is corrected through a cycle count.</Alert>
+      <form class="form" method="post" action={`/shipments/${no}/correct`} novalidate>
+        <CsrfField />
+        <FormField id="reason" label="Reason for the correction" type="textarea" rows={2} required hint="At least 10 characters." value={v(cur, 'reason')} maxlength={500} error={err('reason')} />
+        <FormField id="customer_po" label="Customer PO" value={v(cur, 'customer_po')} maxlength={40} error={err('customer_po')} />
+        <div class="form-grid form-grid--2">
+          <FormField id="requested_date" label="Requested date" type="date" value={v(cur, 'requested_date')} error={err('requested_date')} />
+          <FormField id="promise_date" label="Promise date" type="date" value={v(cur, 'promise_date')} error={err('promise_date')} />
+        </div>
+        {shipped && (
+          <>
+            <div class="form-grid form-grid--2">
+              <FormField id="ship_date" label="Ship date" type="date" value={v(cur, 'ship_date')} error={err('ship_date')} />
+              <FormField id="carrier_id" label="Carrier" type="select" value={v(cur, 'carrier_id')} options={carriers.map((c) => ({ value: String(c.id), label: c.name }))} error={err('carrier_id')} />
+              <FormField id="tracking_number" label="Tracking number" value={v(cur, 'tracking_number')} maxlength={40} error={err('tracking_number')} />
+              <FormField id="service_level" label="Service level" value={v(cur, 'service_level')} maxlength={40} error={err('service_level')} />
+              <FormField id="packages_count" label="Packages" type="number" min={1} value={v(cur, 'packages_count')} error={err('packages_count')} />
+              <FormField id="total_weight_lb" label="Total weight (lb)" type="number" step="0.01" min={0} value={v(cur, 'total_weight_lb')} error={err('total_weight_lb')} />
+            </div>
+            <FormField id="late_reason_id" label="Late reason" type="select" value={v(cur, 'late_reason_id')} placeholderOption="None" options={lateReasons}
+              hint="Required when the corrected ship date is after the promise date." error={err('late_reason_id')} />
+            {(s.lines as any[]).length > 0 && (
+              <ul class="line-rows">{(s.lines as any[]).map((l, i) => (
+                <li class="line-row">
+                  <input type="hidden" name={`lines[${i}][line_id]`} value={l.id} />
+                  <FormField id={fid(`lines[${i}].short_note`)} name={`lines[${i}][short_note]`} label={`Short-ship note, line ${l.line_no} (${l.part.part_number})`} value={v((cur.lines ?? [])[i] ?? { short_note: l.short_note }, 'short_note')} maxlength={300} error={err(`lines[${i}].short_note`)} />
+                </li>
+              ))}</ul>
+            )}
+          </>
+        )}
+        <div class="choice-group choice-group--inline">
+          {DOCS.map(([k, t]) => <label class="check"><input type="checkbox" name={k} value="true" checked={cur[k] === true || cur[k] === 'true'} /><span>{t}</span></label>)}
+        </div>
+        <FormField id="notes" label="Notes" type="textarea" value={v(cur, 'notes')} maxlength={1000} error={err('notes')} />
+        <div class="action-row form-actions">
+          <button class="btn btn--primary" type="submit">Save correction</button>
+          <a class="btn btn--link" href={`/shipments/${no}`}>Cancel</a>
+        </div>
+      </form>
+    </>
+  )}
+</AppLayout>

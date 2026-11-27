@@ -1,0 +1,25 @@
+---
+// S21 Reports index (P-reports).
+import AppLayout from '../../layouts/AppLayout.astro';
+import PageHeader from '../../components/PageHeader.astro';
+export const prerender = false;
+const reports = [
+  { id: 'R1', name: 'Shipment Log', text: 'Shipments by ship date with on-time result, carrier and tracking.' },
+  { id: 'R3', name: 'Packaging Error and Rework Log', text: 'Errors with severity, root cause, rework minutes and corrective-action status.' },
+  { id: 'R4', name: 'Inventory On-Hand', text: 'Stock by part, location and lot.' },
+  { id: 'R7', name: 'Lot Trace', text: 'Receipts, movements and shipments for one lot.' },
+];
+---
+<AppLayout title="Reports">
+  <PageHeader title="Reports" crumbs={[{ label: 'Reports' }]} />
+  <p class="text-muted">Each report shows on screen and downloads as CSV. Reports R2, R5, R6 and R8 are planned for a later version.</p>
+  <ul class="grid grid--2 stack" role="list">
+    {reports.map((r) => (
+      <li class="card stack stack--sm">
+        <h2 class="card__title"><a href={`/reports/${r.id}`}>{r.id} {r.name}</a></h2>
+        <p>{r.text}</p>
+        <p class="cluster"><a class="btn btn--primary" href={`/reports/${r.id}`}>Open report</a></p>
+      </li>
+    ))}
+  </ul>
+</AppLayout>

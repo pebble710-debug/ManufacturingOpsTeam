@@ -1,0 +1,61 @@
+---
+// S24 Lookup list with inline edit forms (one <details> per row).
+import AppLayout from '../../layouts/AppLayout.astro';
+import PageHeader from '../PageHeader.astro';
+import Alert from '../Alert.astro';
+import CsrfField from '../CsrfField.astro';
+import EmptyState from '../EmptyState.astro';
+import FilterBar from '../FilterBar.astro';
+import FormField from '../FormField.astro';
+import LookupFields from './LookupFields.astro';
+import { LOOKUP_LABELS, LOOKUP_ORDER, SPECS } from './lookup-specs';
+import { alertText, isAlert, type Failure } from '../inventory/form-utils';
+interface Props { type: string; rows: any[]; failure: Failure | null; failedId: string }
+const { type, rows, failure, failedId } = Astro.props;
+const label = LOOKUP_LABELS[type];
+const editable = type !== 'users';
+const cols = editable ? SPECS[type].map((f) => f.name) : ['display_name', 'role'];
+const show = (v: unknown) => (v === true ? 'Yes' : v === false ? 'No' : v === null || v === undefined ? '' : String(v));
+const problems = failure ? Object.entries(failure.fields).map(([k, m]) => `${k.replace(/_/g, ' ')} ${m}`) : [];
+---
+<AppLayout title={`Lookups: ${label}`}>
+  <PageHeader title={`Lookups: ${label}`} crumbs={[{ label: 'Admin' }, { label: 'Lookups' }, { label }]}>
+    {editable && <a slot="actions" class="btn btn--primary" href={`/admin/lookups/${type}/new`}>New record</a>}
+  </PageHeader>
+  <nav aria-label="Lookup types"><ul class="cluster cluster--sm" role="list">
+    {LOOKUP_ORDER.map((t) => <li><a class="btn btn--link" href={`/admin/lookups/${t}`} aria-current={t === type ? 'page' : undefined}>{LOOKUP_LABELS[t]}</a></li>)}
+  </ul></nav>
+  {isAlert(failure) && <Alert variant="error" focusOnLoad>{alertText(failure)}</Alert>}
+  {failure && !isAlert(failure) && <Alert variant="error" focusOnLoad>The change was not saved: {problems.join('; ') || failure.message}.</Alert>}
+  {editable && <FilterBar label="Filter records">
+    <FormField id="q" label="Search" value={Astro.url.searchParams.get('q') ?? ''} />
+    <FormField id="active" label="Show" type="select" value={Astro.url.searchParams.get('active') ?? ''} placeholderOption="All" options={[{ value: 'true', label: 'Active only' }, { value: 'false', label: 'Inactive only' }]} />
+  </FilterBar>}
+  {rows.length === 0 ? <EmptyState title="No records" text="Change the filters or create a record." /> : (
+    <div class="table-wrap" tabindex="0" role="region" aria-label={`${label} (scrolls sideways on small screens)`}>
+      <table class="table table--compact">
+        <caption class="visually-hidden">{label}</caption>
+        <thead><tr>{cols.map((c) => <th scope="col">{c.replace(/_/g, ' ')}</th>)}{editable && <th scope="col">Edit</th>}</tr></thead>
+        <tbody>
+          {rows.map((r) => (
+            <tr>
+              {cols.map((c, i) => i === 0 ? <th scope="row" class="cell-id">{show(r[c])}</th> : <td>{show(r[c])}</td>)}
+              {editable && (
+                <td>
+                  <details class="disclosure" open={String(r.id) === failedId && !!failure}>
+                    <summary>Edit</summary>
+                    <form class="form stack" method="post" action={`/admin/lookups/${type}/${r.id}`} novalidate>
+                      <CsrfField />
+                      <LookupFields type={type} values={String(r.id) === failedId && failure ? failure.values : r} errors={String(r.id) === failedId && failure ? failure.fields : {}} suffix={`-${r.id}`} />
+                      <div class="action-row form-actions"><button class="btn btn--primary" type="submit">Save changes</button></div>
+                    </form>
+                  </details>
+                </td>
+              )}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )}
+</AppLayout>

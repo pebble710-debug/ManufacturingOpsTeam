@@ -1,0 +1,63 @@
+---
+// S14a Receipts list (P-receipts). GET only; filters via query string.
+import AppLayout from '../../../layouts/AppLayout.astro';
+import PageHeader from '../../../components/PageHeader.astro';
+import FilterBar from '../../../components/FilterBar.astro';
+import FormField from '../../../components/FormField.astro';
+import DataTable from '../../../components/DataTable.astro';
+import Pagination from '../../../components/Pagination.astro';
+import EmptyState from '../../../components/EmptyState.astro';
+import { getSql } from '../../../lib/db';
+import { can } from '../../../lib/auth/permissions';
+import { listReceipts } from '../../../lib/services/inventory';
+import { listLookup } from '../../../lib/services/lookups';
+import { listQuery, qs, qsInt, qsDate, fmtTs } from '../../../components/inventory/form-utils';
+import { appLocals } from '../../../components/locals';
+
+export const prerender = false;
+const { user } = appLocals(Astro.locals);
+const sql = getSql();
+const url = Astro.url;
+const lq = listQuery(url, { receipt_no: 'r.receipt_no', arrived_at: 'r.arrived_at' }, 'arrived_at', true);
+const insp = qs(url, 'inspection_status');
+const from = qsDate(url, 'from');
+const to = qsDate(url, 'to');
+const res = await listReceipts(sql, {
+  supplier_id: qsInt(url, 'supplier_id'), part_id: qsInt(url, 'part_id'), lot_number: qs(url, 'lot_number').toUpperCase() || undefined,
+  inspection_status: ['Accepted', 'On Hold', 'Rejected'].includes(insp) ? insp : undefined, from, to,
+  sortCol: lq.sortCol, desc: lq.desc, limit: lq.pageSize, offset: lq.offset,
+});
+const suppliers = (await listLookup(sql, 'suppliers', { active: 'all' })).data as any[];
+const parts = (await listLookup(sql, 'parts', { active: 'all' })).data as any[];
+const badge = (s: string) => (s === 'Accepted' ? 'success' : s === 'Rejected' ? 'danger' : 'warning');
+---
+<AppLayout title="Receipts">
+  <PageHeader title="Receipts" crumbs={[{ label: 'Inventory' }, { label: 'Receipts' }]}>
+    {user && can(user.role, 'receipt.create') && <a slot="actions" class="btn btn--primary" href="/inventory/receipts/new">Receive material</a>}
+  </PageHeader>
+  <FilterBar label="Filter receipts">
+    <FormField id="supplier_id" label="Supplier" type="select" value={qs(url, 'supplier_id')} placeholderOption="All suppliers" options={suppliers.map((s) => ({ value: String(s.id), label: s.name }))} />
+    <FormField id="part_id" label="Part" type="select" value={qs(url, 'part_id')} placeholderOption="All parts" options={parts.map((p) => ({ value: String(p.id), label: p.part_number }))} />
+    <FormField id="lot_number" label="Lot" value={qs(url, 'lot_number')} inputClass="input--code" />
+    <FormField id="inspection_status" label="Inspection status" type="select" value={insp} placeholderOption="Any" options={['Accepted', 'On Hold', 'Rejected'].map((v) => ({ value: v, label: v }))} />
+    <FormField id="from" label="Arrived from" type="date" value={from ?? ''} />
+    <FormField id="to" label="Arrived to" type="date" value={to ?? ''} />
+  </FilterBar>
+  {res.total === 0 ? <EmptyState title="No receipts match" text="Change the filters, or receive material." /> : (
+    <DataTable caption="Receipts" sort={lq.sortKey} dir={lq.desc ? 'desc' : 'asc'} columns={[
+      { key: 'receipt_no', label: 'Receipt', sortable: true }, { key: 'supplier', label: 'Supplier' }, { key: 'po', label: 'Supplier PO', priority: 2 },
+      { key: 'part', label: 'Part' }, { key: 'qty', label: 'Qty', numeric: true }, { key: 'lot', label: 'Lot' },
+      { key: 'arrived_at', label: 'Arrived', sortable: true, priority: 2 }, { key: 'loc', label: 'Location', priority: 3 }, { key: 'insp', label: 'Inspection' },
+    ]}>
+      {res.data.map((r) => (
+        <tr>
+          <th scope="row" class="cell-id">{r.receipt_no}</th><td>{r.supplier.name}</td><td class="col-p2">{r.supplier_po}</td>
+          <td>{r.part.part_number}</td><td class="numeric">{r.qty_received}</td><td><a href={`/inventory/lot-trace?lot=${encodeURIComponent(r.lot_number)}`}>{r.lot_number}</a></td>
+          <td class="col-p2">{fmtTs(r.arrived_at)}</td><td class="col-p3">{r.location?.code ?? 'None (rejected)'}</td>
+          <td><span class={`badge badge--${badge(r.inspection_status)}`}>{r.inspection_status}</span></td>
+        </tr>
+      ))}
+    </DataTable>
+  )}
+  <Pagination page={lq.page} total={res.total} noun="receipts" />
+</AppLayout>

@@ -1,0 +1,119 @@
+---
+// S07 Ship (F3). One combined "lot - location - available" select per line; posts SHIP ledger entries atomically (E-12).
+import AppLayout from '../../../layouts/AppLayout.astro';
+import PageHeader from '../../../components/PageHeader.astro';
+import StatusBadge from '../../../components/StatusBadge.astro';
+import Alert from '../../../components/Alert.astro';
+import CsrfField from '../../../components/CsrfField.astro';
+import FormField from '../../../components/FormField.astro';
+import FormAlerts from '../../../components/shipments/FormAlerts.astro';
+import Forbidden from '../../../components/Forbidden.astro';
+import { appLocals } from '../../../components/locals';
+import { getSql } from '../../../lib/db';
+import { findShipment, getShipmentDetail } from '../../../lib/repos/shipments';
+import { shipShipment } from '../../../lib/services/shipments';
+import { shipSchema } from '../../../lib/validation/shipments';
+import { listLookup } from '../../../lib/services/lookups';
+import { can, dateText, emptyState, fid, flash as takeF, submit, v, type FormState } from '../../../components/shipments/forms';
+
+export const prerender = false;
+const { user, reportingDate } = appLocals(Astro.locals);
+const no = Astro.params.no!;
+if (!user) return Astro.redirect(`/login?reason=required&next=/shipments/${no}/ship`);
+const sql = getSql();
+const row = /^SH-\d{4,}$/.test(no) ? await findShipment(sql, { no }) : undefined;
+if (!row) return Astro.rewrite('/404');
+const allowed = can(Astro.locals, 'shipment.ship');
+let state: FormState = emptyState;
+if (allowed && Astro.request.method === 'POST') {
+  const r = await submit(Astro, {
+    schema: shipSchema, redirectTo: `/shipments/${no}`,
+    // The combined select posts "LOT|locationId"; split it into the two fields the contract expects.
+    prepare: (input) => {
+      const lines = Array.isArray(input.lines) ? (input.lines as Record<string, any>[]).map((l) => {
+        const { stock, ...rest } = l;
+        if (typeof stock === 'string' && stock.includes('|')) {
+          const [lot, loc] = stock.split('|');
+          return { ...rest, lot_number: lot, location_id: Number(loc) };
+        }
+        return rest;
+      }) : input.lines;
+      return { ...input, lines };
+    },
+    run: (s, u, input) => shipShipment(s, u, no, input),
+    flash: (s: any) => `Saved: ${no} shipped${s.on_time_indicator === 'Late' ? ` (${s.days_late} days late)` : ''}. Inventory was reduced by the shipped quantities.`,
+  });
+  if ('response' in r) return r.response;
+  state = r.state;
+}
+const s = (await getShipmentDetail(sql, Number(row.id), user))!;
+const flash = takeF(Astro);
+const carriers = (await listLookup(sql, 'carriers', {})).data as any[];
+const lateReasons = (await listLookup(sql, 'reason-codes', { category: 'late' })).data.map((r: any) => ({ value: String(r.id), label: r.label }));
+// stock per line (US-041): Stock / FG / Shipping locations only, never Hold or Receiving
+const stock: Record<number, { value: string; label: string }[]> = {};
+for (const l of s.lines as any[]) {
+  const rows = await sql<{ lot_number: string; location_id: number; code: string; qty: number }[]>`
+    SELECT t.lot_number, t.location_id::int AS location_id, loc.code, sum(t.qty_change)::int AS qty
+      FROM inventory_transaction t JOIN location loc ON loc.id = t.location_id
+     WHERE t.part_id = ${l.part.id} AND loc.active AND loc.type IN ('Stock', 'FG', 'Shipping')
+     GROUP BY t.lot_number, t.location_id, loc.code HAVING sum(t.qty_change) > 0 ORDER BY t.lot_number, loc.code`;
+  stock[l.id] = rows.map((r) => ({ value: `${r.lot_number}|${r.location_id}`, label: `${r.lot_number}, ${r.location_id ? r.code : ''}, ${r.qty} available` }));
+}
+const vals = state.values;
+const shipDate = v(vals, 'ship_date', reportingDate);
+const lateNow = shipDate > s.promise_date;
+const postedLines = (vals.lines ?? []) as Record<string, any>[];
+const err = (k: string) => state.fields[k];
+const noStock = (s.lines as any[]).some((l) => stock[l.id].length === 0);
+---
+<AppLayout title={`Ship ${no}`}>
+  <PageHeader title={`Ship ${no} - ${s.customer.name}`} crumbs={[{ label: 'Shipments', href: '/shipments' }, { label: no, href: `/shipments/${no}` }, { label: 'Ship' }]} operational>
+    <Fragment slot="meta"><StatusBadge status={s.status} /> Promise date: {dateText(s.promise_date)}</Fragment>
+  </PageHeader>
+  <FormAlerts flash={flash} state={state} />
+  {!allowed ? <Forbidden role={user.role} action="ship shipments" /> : s.status !== 'Verified' ? (
+    <Alert variant="error" lead="Problem:">{no} is {s.status}, not Verified. It must be verified before it can ship. <a class="btn btn--secondary" href={`/shipments/${no}`}>Back to shipment</a></Alert>
+  ) : (
+    <form class="form" method="post" action={`/shipments/${no}/ship`} novalidate>
+      <CsrfField />
+      <FormField id="ship_date" label="Ship date" type="date" required value={shipDate} hint={`Defaults to the reporting date, ${dateText(reportingDate)}.`} error={err('ship_date')} />
+      <FormField id="carrier_id" label="Carrier" type="select" required value={v(vals, 'carrier_id', s.carrier?.id ?? '')} placeholderOption="Select carrier"
+        options={carriers.map((c) => ({ value: String(c.id), label: `${c.name} (${c.mode})` }))} error={err('carrier_id')} />
+      <FormField id="tracking_number" label="Tracking number (required unless Customer Pickup)" value={v(vals, 'tracking_number')} hint="Letters, digits, hyphens. Not needed for Customer Pickup." maxlength={40} error={err('tracking_number')} />
+      <FormField id="service_level" label="Service level (optional)" value={v(vals, 'service_level', s.service_level ?? '')} maxlength={40} error={err('service_level')} />
+      <div class="form-grid form-grid--2">
+        <FormField id="packages_count" label="Packages" type="number" min={1} inputmode="numeric" required value={v(vals, 'packages_count')} error={err('packages_count')} />
+        <FormField id="total_weight_lb" label="Total weight (lb)" type="number" min={0} step="0.01" inputmode="decimal" required value={v(vals, 'total_weight_lb')} error={err('total_weight_lb')} />
+      </div>
+      <h2 class="section-title">Late reason</h2>
+      <FormField id="late_reason_id" label={lateNow ? 'Late reason (required: this ships after the promise date)' : 'Late reason'} type="select" required={lateNow} value={v(vals, 'late_reason_id')}
+        placeholderOption="Select reason" options={lateReasons} hint={`Required only when the ship date is after the promise date (${dateText(s.promise_date)}).`} error={err('late_reason_id')} />
+      <h2 class="section-title">Lines shipped</h2>
+      {err('lines') && <p class="form-field__error"><span>Lines: {err('lines')}</span></p>}
+      <ul class="line-rows">
+        {(s.lines as any[]).map((l, i) => {
+          const p = postedLines[i] ?? {};
+          const def = (l.lot_number && l.location?.id ? `${l.lot_number}|${l.location.id}` : '') || stock[l.id][0]?.value || '';
+          const stockErr = err(`lines[${i}].lot_number`) ?? err(`lines[${i}].location_id`);
+          return (
+            <li class="line-row">
+              <p class="line-row__title">Line {l.line_no}: {l.part.part_number}, ordered {l.qty_ordered}</p>
+              <input type="hidden" name={`lines[${i}][line_id]`} value={l.id} />
+              <FormField id={fid(`lines[${i}].qty_shipped`)} name={`lines[${i}][qty_shipped]`} label={`Quantity shipped, line ${l.line_no}`} type="number" min={0} inputmode="numeric" required value={v(p, 'qty_shipped', l.qty_ordered)} error={err(`lines[${i}].qty_shipped`)} />
+              <FormField id={fid(`lines[${i}].lot_number`)} name={`lines[${i}][stock]`} label={`Ship from lot, location and availability, line ${l.line_no}`} type="select" required
+                value={v(p, 'stock', def)} placeholderOption={stock[l.id].length ? 'Select lot and location' : `No stock available for ${l.part.part_number}`} options={stock[l.id]} error={stockErr} />
+              <FormField id={fid(`lines[${i}].short_note`)} name={`lines[${i}][short_note]`} label={`Short-ship note, line ${l.line_no} (required if it ships fewer than ordered)`} value={v(p, 'short_note')} maxlength={300} error={err(`lines[${i}].short_note`)} />
+            </li>
+          );
+        })}
+      </ul>
+      <p class="text-muted text-small">A line shipped short will not count as in full for OTIF.</p>
+      {noStock && <Alert variant="warning" lead="Check:">At least one line has no stock available, so this shipment cannot ship yet. Receive stock first.</Alert>}
+      <div class="action-row form-actions">
+        <button class="btn btn--primary" type="submit">Ship {no}</button>
+        <a class="btn btn--link" href={`/shipments/${no}`}>Cancel</a>
+      </div>
+    </form>
+  )}
+</AppLayout>

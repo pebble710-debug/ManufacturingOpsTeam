@@ -1,0 +1,100 @@
+---
+// S21 Report page (P-report): R1, R3, R4, R7 with filters, on-screen table and CSV link (E-50).
+import AppLayout from '../../layouts/AppLayout.astro';
+import PageHeader from '../../components/PageHeader.astro';
+import FilterBar from '../../components/FilterBar.astro';
+import FormField from '../../components/FormField.astro';
+import Pagination from '../../components/Pagination.astro';
+import EmptyState from '../../components/EmptyState.astro';
+import Alert from '../../components/Alert.astro';
+import { getSql } from '../../lib/db';
+import { runReport, REPORT_IDS } from '../../lib/services/reports';
+import { listLookup } from '../../lib/services/lookups';
+import { HttpError } from '../../lib/http/errors';
+import { CATEGORIES, SEVERITIES, STAGES } from '../../lib/validation/quality';
+import { SHIPMENT_STATUSES } from '../../lib/validation/shipments';
+import { qs, humanize } from '../../components/inventory/form-utils';
+
+export const prerender = false;
+const id = String(Astro.params.id ?? '').toUpperCase();
+if (!(REPORT_IDS as readonly string[]).includes(id)) return Astro.rewrite('/404');
+const sql = getSql();
+const FILTERS: Record<string, string[]> = {
+  R1: ['from', 'to', 'customer_id', 'carrier_id', 'status', 'include_cancelled', 'late_only'],
+  R3: ['from', 'to', 'category', 'severity', 'detected_stage', 'status'],
+  R4: ['part_id', 'location_id', 'lot_number', 'include_zero'],
+  R7: ['lot_number'],
+};
+const apiUrl = new URL('http://local/api/v1/reports/' + id);
+for (const k of FILTERS[id]) { const v = qs(Astro.url, k); if (v) apiUrl.searchParams.set(k, v); }
+const filterQs = apiUrl.searchParams.toString();
+const pageN = Number(qs(Astro.url, 'page') || '1');
+if (Number.isInteger(pageN) && pageN > 1) apiUrl.searchParams.set('page', String(pageN));
+let result: Awaited<ReturnType<typeof runReport>> | null = null;
+let error = '';
+const needsLot = id === 'R7' && !qs(Astro.url, 'lot_number');
+if (!needsLot) {
+  try { result = await runReport(sql, id, apiUrl); } catch (e) {
+    if (e instanceof HttpError && e.status === 422) { error = Object.entries(e.fields ?? {}).map(([k, m]) => `${humanize(k)} ${m}`).join('; ') || e.message; Astro.response.status = 422; } else throw e;
+  }
+}
+const customers = id === 'R1' ? (await listLookup(sql, 'customers', { active: 'all' })).data as any[] : [];
+const carriers = id === 'R1' ? (await listLookup(sql, 'carriers', { active: 'all' })).data as any[] : [];
+const parts = id === 'R4' ? (await listLookup(sql, 'parts', { active: 'all' })).data as any[] : [];
+const locations = id === 'R4' ? (await listLookup(sql, 'locations', { active: 'all' })).data as any[] : [];
+const g = (k: string) => qs(Astro.url, k);
+const yn = [{ value: 'true', label: 'Yes' }];
+const csvHref = `/api/v1/reports/${id}?format=csv${filterQs ? '&' + filterQs : ''}`;
+const titles: Record<string, string> = { R1: 'Shipment Log', R3: 'Packaging Error and Rework Log', R4: 'Inventory On-Hand', R7: 'Lot Trace' };
+const cell = (v: unknown, key: string) => (v === null || v === undefined ? ((key === 'rework_minutes' || key === 'corrective_action_status') ? 'None' : '') : typeof v === 'boolean' ? (v ? 'Yes' : 'No') : v instanceof Date ? v.toISOString().slice(0, 10) : String(v));
+---
+<AppLayout title={`${id} ${titles[id]}`}>
+  <PageHeader title={`${id} ${titles[id]}`} crumbs={[{ label: 'Reports', href: '/reports' }, { label: id }]}>
+    {!needsLot && !error && <a slot="actions" class="btn btn--secondary" href={csvHref}>Download CSV</a>}
+  </PageHeader>
+  <FilterBar label={`Filter ${id}`} applyLabel="Run report">
+    {(id === 'R1' || id === 'R3') && <>
+      <FormField id="from" label="From" type="date" value={g('from')} hint="Default: 30 days to the reporting date." />
+      <FormField id="to" label="To" type="date" value={g('to')} />
+    </>}
+    {id === 'R1' && <>
+      <FormField id="customer_id" label="Customer" type="select" value={g('customer_id')} placeholderOption="All customers" options={customers.map((c) => ({ value: String(c.id), label: c.name }))} />
+      <FormField id="carrier_id" label="Carrier" type="select" value={g('carrier_id')} placeholderOption="All carriers" options={carriers.map((c) => ({ value: String(c.id), label: c.name }))} />
+      <FormField id="status" label="Status" type="select" value={g('status')} placeholderOption="Any status" options={SHIPMENT_STATUSES.map((v) => ({ value: v, label: v }))} />
+      <FormField id="late_only" label="Late shipments only" type="select" value={g('late_only')} placeholderOption="No" options={yn} />
+      <FormField id="include_cancelled" label="Include cancelled" type="select" value={g('include_cancelled')} placeholderOption="No" options={yn} />
+    </>}
+    {id === 'R3' && <>
+      <FormField id="category" label="Category" type="select" value={g('category')} placeholderOption="All" options={CATEGORIES.map((v) => ({ value: v, label: v }))} />
+      <FormField id="severity" label="Severity" type="select" value={g('severity')} placeholderOption="All" options={SEVERITIES.map((v) => ({ value: v, label: v }))} />
+      <FormField id="detected_stage" label="Detected stage" type="select" value={g('detected_stage')} placeholderOption="All" options={STAGES.map((v) => ({ value: v, label: v }))} />
+      <FormField id="status" label="Error status" type="select" value={g('status')} placeholderOption="All" options={['Open', 'Contained', 'Closed'].map((v) => ({ value: v, label: v }))} />
+    </>}
+    {id === 'R4' && <>
+      <FormField id="part_id" label="Part" type="select" value={g('part_id')} placeholderOption="All parts" options={parts.map((p) => ({ value: String(p.id), label: p.part_number }))} />
+      <FormField id="location_id" label="Location" type="select" value={g('location_id')} placeholderOption="All locations" options={locations.map((l) => ({ value: String(l.id), label: l.code }))} />
+      <FormField id="include_zero" label="Zero rows" type="select" value={g('include_zero')} placeholderOption="Hide" options={[{ value: 'true', label: 'Include' }]} />
+    </>}
+    {(id === 'R4' || id === 'R7') && <FormField id="lot_number" label="Lot number" required={id === 'R7'} value={g('lot_number')} inputClass="input--code" />}
+  </FilterBar>
+  {error && <Alert variant="error" focusOnLoad>{error}</Alert>}
+  {needsLot && <EmptyState title="Enter a lot number" text="Lot Trace needs a lot, for example L2611-004." />}
+  {result && (
+    <section class="stack" aria-label="Report results">
+      <p class="text-muted text-small">Generated {result.generated_at.slice(0, 16).replace('T', ' ')} UTC{result.period ? `. Period ${result.period.from} to ${result.period.to}.` : '.'}</p>
+      {result.totals && <p class="cluster">{Object.entries(result.totals).map(([k, v]) => <span class="badge badge--neutral">{humanize(k)}: {String(v)}</span>)}</p>}
+      {result.total === 0 ? <EmptyState title="No rows" text="No data matches these filters." /> : (
+        <div class="table-wrap" tabindex="0" role="region" aria-label={`${titles[id]} results (scrolls sideways on small screens)`}>
+          <table class="table table--compact">
+            <caption class="visually-hidden">{titles[id]}</caption>
+            <thead><tr>{result.columns.map((c) => <th scope="col" class={c.type === 'number' ? 'numeric' : undefined}>{c.label}</th>)}</tr></thead>
+            <tbody>
+              {result.data.map((r) => <tr>{result.columns.map((c, i) => i === 0 ? <th scope="row" class="cell-id">{cell(r[c.key], c.key)}</th> : <td class={c.type === 'number' ? 'numeric' : undefined}>{cell(r[c.key], c.key)}</td>)}</tr>)}
+            </tbody>
+          </table>
+        </div>
+      )}
+      <Pagination page={result.page} total={result.total} pageSize={result.page_size} noun="rows" />
+    </section>
+  )}
+</AppLayout>

@@ -1,0 +1,9 @@
+---
+// S24 Lookup list (P-lookups).
+import LookupList from '../../../../components/admin/LookupList.astro';
+import { lookupPage } from '../../../../components/admin/lookup-actions';
+export const prerender = false;
+const r = await lookupPage(Astro, 'list');
+if (r.notFound) return Astro.rewrite('/404');
+---
+<LookupList type={r.type} rows={r.rows} failure={null} failedId="" />
