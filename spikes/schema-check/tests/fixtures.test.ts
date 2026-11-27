@@ -221,8 +221,7 @@ describe('Fixture B: packaging KPIs (KPI-3, KPI-4, KPI-5), period 2026-11-01..20
     expect([v.w, v.e, v.i, v.x]).toEqual([num(r.shipments_with_error), num(r.errors), num(r.internal_catches), num(r.customer_escapes)]);
   });
   it('SCH-B08 UD-8 two period dates: SH-2007 first-verified 11-30, shipped 12-01 -> KPI-3 Nov unchanged (5, 60.0 %), KPI-4 Nov 3/6 = 50.0 %, KPI-3 12-01 = 0/1', async () => {
-    const ids: Ids = await loadBase(db).catch(() => null as any) ?? null as any; // base already loaded: look ids up instead
-    void ids;
+    // base data is already loaded in this db: look ids up by key
     const u = async (n: string) => Number((await one(db, `SELECT id FROM app_user WHERE username=$1`, [n])).id);
     const cust = Number((await one(db, `SELECT id FROM customer WHERE code='ALDERVALE'`)).id);
     const car = Number((await one(db, `SELECT id FROM carrier WHERE name='SwiftLane Parcel'`)).id);

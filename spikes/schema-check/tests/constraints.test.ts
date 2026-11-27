@@ -246,7 +246,7 @@ describe('T-022 user decisions: severity (UD-5), packaging_related (UD-9), locke
     category: 'Wrong part', severity: 'Low', description: 'Demo error', reported_by: U('demo.quality'), ...o });
 
   it('SCH-47 severity is exactly Low / Medium / High / Critical (UD-5); Minor and Major are rejected', async () => {
-    const s = await insertRow(db, 'shipment', shipmentDefaults(ids, { shipment_no: 'SH-9060' }));
+    const s = await insertRow(db, 'shipment', shipmentDefaults(ids, { shipment_no: 'SH-9560' }));
     for (const sev of ['Low', 'Medium', 'High', 'Critical']) await errRow(s, { severity: sev });
     for (const sev of ['Minor', 'Major', 'low', '']) {
       await expectDbError(errRow(s, { severity: sev }), /packaging_error_severity_check/, CHECK);
@@ -254,7 +254,7 @@ describe('T-022 user decisions: severity (UD-5), packaging_related (UD-9), locke
     expect((await one(db, `SELECT count(*)::int AS n FROM packaging_error WHERE shipment_id=$1`, [s])).n).toBe(4);
   });
   it('SCH-48 packaging_related defaults to true; false only for an After-ship error (UD-9, kpi-spec S-1)', async () => {
-    const s = await insertRow(db, 'shipment', shippedDefaults(ids, { shipment_no: 'SH-9061' }));
+    const s = await insertRow(db, 'shipment', shippedDefaults(ids, { shipment_no: 'SH-9561' }));
     const d = await errRow(s);
     expect((await one(db, `SELECT packaging_related FROM packaging_error WHERE id=$1`, [d])).packaging_related).toBe(true);
     await expectDbError(errRow(s, { packaging_related: false }), /packaging_error_related_chk/, CHECK);
@@ -270,9 +270,9 @@ describe('T-022 user decisions: severity (UD-5), packaging_related (UD-9), locke
     let line: number;
     beforeAll(async () => {
       await insertLot(db, ids, 'L2611-950', 'CRC-2041-B');
-      shipped = await insertRow(db, 'shipment', shippedDefaults(ids, { shipment_no: 'SH-9070', tracking_number: 'SLP000000000001', notes: 'n' }));
+      shipped = await insertRow(db, 'shipment', shippedDefaults(ids, { shipment_no: 'SH-9570', tracking_number: 'SLP000000000001', notes: 'n' }));
       line = await insertRow(db, 'shipment_line', { shipment_id: shipped, line_no: 1, part_id: ids.part['CRC-2041-B'], qty_ordered: 10, qty_shipped: 9, short_note: 'Short 1', lot_number: 'L2611-950', location_id: ids.loc['STK-A01'] });
-      cancelled = await insertRow(db, 'shipment', shipmentDefaults(ids, { shipment_no: 'SH-9071', status: 'Cancelled', notes: 'c' }));
+      cancelled = await insertRow(db, 'shipment', shipmentDefaults(ids, { shipment_no: 'SH-9571', status: 'Cancelled', notes: 'c' }));
     });
     const val = async (id: number, col: string) => (await one(db, `SELECT ${col} AS v FROM shipment WHERE id=$1`, [id])).v;
 
@@ -306,7 +306,7 @@ describe('T-022 user decisions: severity (UD-5), packaging_related (UD-9), locke
         await expectDbError(db.query(`UPDATE shipment_line SET ${col}=$1 WHERE id=$2`, [v, line]), /locked shipment: only short_note may change/, RESTRICT);
       }
       await db.query(`UPDATE shipment_line SET short_note='Short 1: corrected' WHERE id=$1`, [line]);
-      const open = await insertRow(db, 'shipment', shipmentDefaults(ids, { shipment_no: 'SH-9072' }));
+      const open = await insertRow(db, 'shipment', shipmentDefaults(ids, { shipment_no: 'SH-9572' }));
       const ol = await insertRow(db, 'shipment_line', { shipment_id: open, line_no: 1, part_id: ids.part['CRC-2041-B'], qty_ordered: 10 });
       await db.query(`UPDATE shipment_line SET qty_ordered=12 WHERE id=$1`, [ol]); // control: not locked
       await db.query(`UPDATE shipment SET customer_po='PO-OPEN-EDIT' WHERE id=$1`, [open]); // control: not locked
