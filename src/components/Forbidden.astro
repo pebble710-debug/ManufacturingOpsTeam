@@ -1,0 +1,14 @@
+---
+// 403 body (S26). Identity refusals (verifier = packer ...) use their own in-place alert, not this.
+interface Props { role?: string; action?: string }
+const { role, action } = Astro.props;
+---
+<div class="error-state" role="group" aria-labelledby="forbidden-title">
+  <h1 class="error-state__title" id="forbidden-title">You don't have permission to do that</h1>
+  <p class="error-state__text">
+    {role && action
+      ? `Your role (${role}) can't ${action}. If you think this is a mistake, ask a Supervisor.`
+      : "Your role can't open this page or make this change. If you think this is a mistake, ask a Supervisor."}
+  </p>
+  <div class="error-state__actions"><a class="btn btn--primary" href="/dashboard">Back to dashboard</a></div>
+</div>

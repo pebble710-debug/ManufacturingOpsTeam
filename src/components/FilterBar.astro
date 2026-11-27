@@ -1,0 +1,12 @@
+---
+// GET filter form above a table. Fields go in the default slot (use <FormField>). Clear link resets all params.
+interface Props { label: string; applyLabel?: string; clearHref?: string }
+const { label, applyLabel = 'Apply filters', clearHref = Astro.url.pathname } = Astro.props;
+---
+<form class="filter-bar" method="get" role="search" aria-label={label}>
+  <div class="filter-bar__fields"><slot /></div>
+  <div class="filter-bar__actions">
+    <button class="btn btn--primary" type="submit">{applyLabel}</button>
+    <a class="btn btn--link" href={clearHref}>Clear filters</a>
+  </div>
+</form>

@@ -1,0 +1,56 @@
+---
+// Label + hint + control + inline error. Built-in controls: text-like inputs, select, textarea.
+// For anything else (radios, custom), pass the control in the default slot and use
+// fieldDescribedBy(id, {hint, error}) from ./query on it; this wrapper still renders label/hint/error.
+import Icon from './Icon.astro';
+import { fieldDescribedBy } from './query';
+interface Option { value: string; label: string }
+interface Props {
+  id: string;
+  name?: string;
+  label: string;
+  type?: 'text' | 'number' | 'date' | 'password' | 'email' | 'search' | 'textarea' | 'select';
+  value?: string | number | null;
+  required?: boolean;
+  hint?: string;
+  error?: string;
+  options?: Option[];
+  placeholderOption?: string;
+  rows?: number;
+  autocomplete?: string;
+  inputClass?: string;
+  min?: string | number;
+  max?: string | number;
+  step?: string | number;
+  maxlength?: number;
+  inputmode?: 'numeric' | 'decimal' | 'text';
+  readonly?: boolean;
+}
+const {
+  id, label, type = 'text', value = '', required = false, hint, error, options = [], placeholderOption,
+  rows = 3, autocomplete, inputClass, min, max, step, maxlength, inputmode, readonly = false,
+} = Astro.props;
+const name = Astro.props.name ?? id;
+const describedby = fieldDescribedBy(id, { hint: !!hint, error: !!error });
+const common = {
+  id, name, 'aria-describedby': describedby, 'aria-invalid': error ? ('true' as const) : undefined,
+  'aria-required': required ? ('true' as const) : undefined, readonly,
+};
+const hasSlot = Astro.slots.has('default');
+---
+<div class:list={['form-field', { 'form-field--invalid': !!error }]}>
+  <label class="form-field__label" for={id}>{label}{required && <> <span class="form-field__required">(required)</span></>}</label>
+  {hint && <p class="form-field__hint" id={`${id}-hint`}>{hint}</p>}
+  {hasSlot ? <slot /> : type === 'select' ? (
+    <select class:list={['select', inputClass]} {...common}>
+      {placeholderOption !== undefined && <option value="">{placeholderOption}</option>}
+      {options.map((o) => <option value={o.value} selected={String(value) === o.value}>{o.label}</option>)}
+    </select>
+  ) : type === 'textarea' ? (
+    <textarea class:list={['textarea', inputClass]} rows={rows} maxlength={maxlength} {...common}>{value}</textarea>
+  ) : (
+    <input class:list={['input', inputClass]} type={type} value={value ?? ''} autocomplete={autocomplete}
+      min={min} max={max} step={step} maxlength={maxlength} inputmode={inputmode} {...common} />
+  )}
+  {error && <p class="form-field__error" id={`${id}-err`}><Icon name="error" /><span>{error}</span></p>}
+</div>

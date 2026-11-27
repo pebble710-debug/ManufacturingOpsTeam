@@ -1,0 +1,9 @@
+---
+interface Props { title: string; text?: string }
+const { title, text } = Astro.props;
+---
+<div class="empty-state">
+  <p class="empty-state__title">{title}</p>
+  {text && <p class="empty-state__text">{text}</p>}
+  {Astro.slots.has('default') && <div class="empty-state__actions"><slot /></div>}
+</div>

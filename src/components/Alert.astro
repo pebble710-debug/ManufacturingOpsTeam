@@ -1,0 +1,13 @@
+---
+// Flash / inline alert. role="alert" for errors, role="status" otherwise (override with `role`).
+import Icon from './Icon.astro';
+import type { AlertVariant } from './types';
+interface Props { variant?: AlertVariant; lead?: string; role?: 'alert' | 'status'; id?: string; focusOnLoad?: boolean }
+const { variant = 'info', lead, role, id, focusOnLoad = false } = Astro.props;
+const icon = ({ info: 'info', success: 'check', warning: 'warning', error: 'error' } as const)[variant];
+const leadText = lead ?? ({ info: 'Note:', success: 'Saved:', warning: 'Warning:', error: 'Problem:' } as const)[variant];
+const r = role ?? (variant === 'error' ? 'alert' : 'status');
+---
+<div class={`alert alert--${variant}`} role={r} id={id} tabindex={focusOnLoad ? -1 : undefined} data-focus-on-load={focusOnLoad ? '' : undefined}>
+  <Icon name={icon} /><div class="alert__body"><p><span class="alert__lead">{leadText}</span> <slot /></p></div>
+</div>

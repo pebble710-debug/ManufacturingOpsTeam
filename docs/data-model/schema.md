@@ -131,8 +131,9 @@ Legend: **PK** primary key, **FK** foreign key, **U** unique, req = NOT NULL. On
 
 ### 4.3 Shipping (US-014, US-016, US-019, US-020, US-021, US-024)
 
-**`shipment`** — `id`; `shipment_no` U (`^SH-[0-9]{4,}$`, default from `shipment_no_seq`); `customer_id` FK; `customer_po` (1..40); `order_date`, `requested_date`, `promise_date` (dates, req); `status` (8 values); `held_from_status`, `hold_reason_id` FK, `hold_owner_dept` (`Shipping|Quality|Receiving|Production|Planning|Customer`) — **all three set together exactly when status is `On Hold`** (`shipment_hold_chk`) and cleared on release; `rework_origin` (`VERIFICATION_FAILED|ERROR_LOGGED|EDITED_AFTER_VERIFY`, required while `Rework`, may persist while `On Hold`/`Cancelled`, `shipment_rework_chk`); `rework_episode int` (**Q-K answer**: incremented by the server on every entry to `Rework`; see 4.4); `late_reason_id` FK; `ship_date`, `shipped_at`, `carrier_id` FK, `tracking_number` (`^[A-Za-z0-9-]{1,40}$`), `service_level` (<= 40), `packages_count` (>= 1), `total_weight_lb` numeric(10,2) (> 0); `doc_packing_slip`, `doc_bol`, `doc_coc`, `doc_labels`; `packed_by` FK (**the current packer**, set by `start-packing` and `reopen`); `verified_by`, `verified_at` (set by a passing verification, cleared on entry to Rework); `notes` (<= 1000); `created_by`, `created_at`, `updated_at`.
-Constraints: `shipment_dates_chk` (promise and requested >= order date); `shipment_verified_chk` (`verified_by` and `verified_at` together; **`verified_by <> packed_by`**, so a verifier who is the current packer is impossible even if the API had a bug); `shipment_shipped_fields_chk` (ship fields only when `Shipped`, and when `Shipped` ship date, timestamp, carrier, packages, weight **and a verifier** are required: **no un-verified shipment can be Shipped**); `shipment_late_reason_chk` (a `Shipped` shipment with `ship_date > promise_date` must have a late reason; a late reason exists only on `Shipped`). Tolerance days are an app rule (the CHECK is stricter than a positive tolerance, which is what contract E-12 also requires of the late reason: `ship_date > promise_date + tolerance`; with tolerance > 0 a shipment inside the tolerance window but after the promise date needs a reason here. **Mismatch noted in section 10**).
+**`shipment`** — `id`; `shipment_no` U (`^SH-[0-9]{4,}$`, default from `shipment_no_seq`); `customer_id` FK; `customer_po` (1..40); `order_date`, `requested_date`, `promise_date` (dates, req); `status` (8 values); `held_from_status`, `hold_reason_id` FK, `hold_owner_dept` (`Shipping|Quality|Receiving|Production|Planning|Customer`) — **all three set together exactly when status is `On Hold`** (`shipment_hold_chk`) and cleared on release; `rework_origin` (`VERIFICATION_FAILED|ERROR_LOGGED|EDITED_AFTER_VERIFY`, required while `Rework`, may persist while `On Hold`/`Cancelled`, `shipment_rework_chk`); `rework_episode int` (**Q-K answer**: incremented by the server on every entry to `Rework`; see 4.4); `late_reason_id` FK; `ship_date`, `shipped_at`, `carrier_id` FK, `tracking_number` (`^[A-Za-z0-9-]{1,40}$`), `service_level` (<= 40), `packages_count` (>= 1), `total_weight_lb` numeric(10,2) (> 0); `doc_packing_slip`, `doc_bol`, `doc_coc`, `doc_labels`; `packed_by` FK (**the current packer**, set by `start-packing`; *(UD-4)* `reopen` by Quality/Supervisor **clears** it and the user who re-packs claims it with `start-packing`, so a Packing shipment may have `packed_by` NULL right after a reopen and cannot be verified until someone re-packs: `shipment_verification.packer_id` is NOT NULL); `verified_by`, `verified_at` (set by a passing verification, cleared on entry to Rework); `notes` (<= 1000); `created_by`, `created_at`, `updated_at`.
+**Locked after Shipped or Cancelled (UD-3, matrix R-14):** trigger `shipment_lock_guard` makes the status terminal and lets only the correctable columns of the Supervisor correction (contract E-53) change: `customer_po`, `requested_date`, `promise_date`, `ship_date`, `carrier_id`, `tracking_number`, `service_level`, `packages_count`, `total_weight_lb`, `late_reason_id`, `doc_*`, `notes`. `shipment_line_lock_guard` allows only `short_note` on lines of a locked shipment. The ship action therefore writes lines and SHIP rows **before** it sets the status to Shipped. No Delivered status exists (UD-6).
+Constraints: `shipment_dates_chk` (promise and requested >= order date); `shipment_verified_chk` (`verified_by` and `verified_at` together; **`verified_by <> packed_by`**, so a verifier who is the current packer is impossible even if the API had a bug); `shipment_shipped_fields_chk` (ship fields only when `Shipped`, and when `Shipped` ship date, timestamp, carrier, packages, weight **and a verifier** are required: **no un-verified shipment can be Shipped**); `shipment_late_reason_chk` (a `Shipped` shipment with `ship_date > promise_date` must have a late reason; a late reason exists only on `Shipped`). **UD-1:** the late reason is required whenever `ship_date > promise_date`, regardless of `on_time_tolerance_days` (tolerance affects KPI-1/2 only), so the CHECK and contract E-12 say the same thing.
 Indexes: `ship_date` (partial, Shipped), `status`, `(customer_id, order_date)`, `carrier_id`, `promise_date` (partial, open), `packed_by`.
 
 **`shipment_line`** — `id`, `shipment_id` FK, `line_no` (U with shipment), `part_id` FK, `qty_ordered` (> 0), `qty_shipped` (>= 0, null until shipped), `lot_number` (nullable until chosen), `location_id` FK (nullable until shipped), `short_note`, timestamps. Composite FK `(part_id, lot_number) -> lot`. CHECK: `qty_shipped < qty_ordered` requires a non-blank `short_note` (US-021). `UNIQUE (id, part_id, location_id, lot_number)` and `UNIQUE (id, shipment_id)` are FK targets (ledger SHIP rows and packaging errors). Revision comes from `part.revision` (no revision column on the line). Delete only while the shipment is Planned / Ready to Pack (trigger).
@@ -145,7 +146,7 @@ Indexes: `ship_date` (partial, Shipped), `status`, `(customer_id, order_date)`, 
 
 ### 4.4 Packaging quality (US-027, US-029, US-030, US-032)
 
-**`packaging_error`** — `id`, `error_no` U (`PE-0001`), `shipment_id` FK, `shipment_line_id` (composite FK with the shipment), `detected_at` (business_now by default, app-supplied), `rework_episode` (the shipment's `rework_episode` at logging; set only for Before-ship errors; Q-K), `detected_by_role` (`Packer|Verifier|Quality|Customer`), `detected_stage` (`Before ship|After ship`), `category` (8 values), `paperwork_subtype` (5 values), `severity`, `description` (1..1000), `root_cause_category` (6M), `root_cause_note` (the 5 Whys, <= 2000), `status` (`Open|Contained|Closed`), `closed_at`, `reported_by` FK, timestamps. CHECKs: `paperwork_subtype` present **iff** category is Paperwork; `closed_at` present iff Closed; `Customer` only with After ship; After ship only by `Quality` or `Customer` (contract E-18 [A]); `rework_episode` only for Before ship. `UNIQUE (id, shipment_id)` for the rework FK. Derived, never stored: `needs_recategorisation` (category = Other), `is_overdue` (Open and older than 7 days, vs `business_today`).
+**`packaging_error`** — `id`, `error_no` U (`PE-0001`), `shipment_id` FK, `shipment_line_id` (composite FK with the shipment), `detected_at` (business_now by default, app-supplied), `rework_episode` (the shipment's `rework_episode` at logging; set only for Before-ship errors; Q-K), `detected_by_role` (`Packer|Verifier|Quality|Customer`), `detected_stage` (`Before ship|After ship`), `category` (8 values), `paperwork_subtype` (5 values), `severity` (`Low|Medium|High|Critical`, UD-5), `description` (1..1000), `root_cause_category` (6M), `root_cause_note` (the 5 Whys, <= 2000), `status` (`Open|Contained|Closed`), **`packaging_related`** (boolean, default true; may be false only for an After-ship error, CHECK `packaging_error_related_chk`; set to false only by Quality/Supervisor with a reason recorded in the audit row; decides whether a customer-found error counts against KPI-3, KPI-4 and C3, UD-9), `closed_at`, `reported_by` FK, timestamps. CHECKs: `paperwork_subtype` present **iff** category is Paperwork; `closed_at` present iff Closed; `Customer` only with After ship; After ship only by `Quality` or `Customer` (contract E-18 [A]); `rework_episode` only for Before ship. `UNIQUE (id, shipment_id)` for the rework FK. Derived, never stored: `needs_recategorisation` (category = Other), `is_overdue` (Open and older than 7 days, vs `business_today`).
 **Q-K answered.** The rework gate (contract 1.7 G1/G2) becomes an equality instead of a timestamp comparison: G1 = a Before-ship error with `rework_episode = shipment.rework_episode`; G2 = a completed `rework_event` for such an error. The server increments `shipment.rework_episode` in the same transaction that moves the shipment into Rework (verification failed, error logged on Packing/Verified, edit after verify), and stamps the new value on an error it logs in that transaction. Diego may keep the timestamp rule; the columns cost nothing and remove the same-transaction timestamp ambiguity.
 
 **`rework_event`** — `id`, `packaging_error_id` + `shipment_id` (**composite FK to `packaging_error (id, shipment_id)`**, so the shipment cannot disagree with its error), `action` (6 values), `started_at`, `completed_at` (both business instants, D-1), `completed_business_date` (**generated**: UTC date of `completed_at`; never written by the app or seed), `minutes integer GENERATED ALWAYS AS (floor(epoch(completed_at - started_at) / 60)) STORED` (null while in progress; excluded from totals), `performed_by` FK, `reverified_ok boolean` (server-managed, E-11), timestamps. CHECK `completed_at >= started_at`.
@@ -160,7 +161,7 @@ Indexes: `ship_date` (partial, Shipped), `status`, `(customer_id, order_date)`, 
 Per-type CHECKs: RECEIPT `qty > 0` and `receipt_id`; SHIP `qty < 0` and `shipment_line_id`; PRODUCTION_COMPLETE `qty > 0`; SCRAP `qty < 0` and a reason; **ADJUST needs a reason and a `cycle_count_line_id`** (`inventory_transaction_adjust_chk`, relaxed by US-040 in migration 0005); TRANSFER needs `txn_group`; each link column is allowed only for its own type. **A partial unique index allows at most one ADJUST per count line**, which implements "no second adjustment on a repeated approval" (E-40, `ALREADY_APPROVED`) at the database. The contract's `adjustment_txn_id` on the count line is **derived** (`ledger.cycle_count_line_id = line.id`) rather than stored (a stored copy would need an UPDATE of the line and a circular reference).
 Deferred constraint triggers (checked at COMMIT): **`inventory_transaction_nonnegative`** (on-hand of the (part, location, lot) never negative; takes `pg_advisory_xact_lock(hashtextextended(key))` so two concurrent postings are serialized) and **`inventory_transaction_transfer_balanced`** (a TRANSFER group has exactly two legs summing to zero). The API's own sorted `pg_advisory_xact_lock(part, hash(lot))` (contract 1.9) uses the two-argument key space and so does not collide with the trigger's one-argument key; because the API serializes first, the trigger is a backstop and is not expected to wait. The check proves the **end state**; "stock covered the ship at ship time" is verified by the running-balance query in seed-plan section 9. Indexes: `(part_id, location_id, lot_number)`, `(lot_number, txn_at, id)`, `(txn_at)`, partial on `shipment_line_id`, `receipt_id`, `txn_group`.
 
-**`cycle_count`** — `id`, `count_no` U (`CC-0001`), `scheduled_date`, `status` (`Open|Counted|Approved`), `scope_abc_class`, `scope_location_id` FK, `created_by`, `submitted_by` + `submitted_at` (set on submit), `approved_by` + `approved_at` + **`approved_business_date`** (set together on approval), `approval_reason_code_id` FK (the adjust reason of E-40), `approval_note`, timestamps. CHECKs tie each status to its fields (the earlier `approved_by <> submitted_by` CHECK was removed in T-016, D-13: matrix R-4 covers counters and recounters only). Trigger `cycle_count_approval_guard` (BEFORE UPDATE): an **Approved count is terminal**, and approval is refused when the approver **counted or recounted any line** (Matrix R-4, `APPROVER_SAME_AS_COUNTER`; the API checks first and returns 403). Index on `approved_business_date` (partial, Approved).
+**`cycle_count`** — `id`, `count_no` U (`CC-0001`), `scheduled_date`, `status` (`Open|Counted|Approved`), `scope_abc_class`, `scope_location_id` FK, `created_by`, `submitted_by` + `submitted_at` (set on submit), `approved_by` + `approved_at` + **`approved_business_date`** (set together on approval), `approval_reason_code_id` FK (the adjust reason of E-40), `approval_note`, timestamps. CHECKs tie each status to its fields, and **`cycle_count_approver_not_submitter_chk` (`approved_by <> submitted_by`)** is back (UD-2 widened R-4 to the submitter; it reverses T-016 D-13). Trigger `cycle_count_approval_guard` (BEFORE UPDATE): an **Approved count is terminal**, and approval is refused when the approver **counted or recounted any line** (Matrix R-4, `APPROVER_SAME_AS_COUNTER`) or **submitted** the count (CHECK above, `APPROVER_SAME_AS_SUBMITTER`); the API checks first and returns 403. Index on `approved_business_date` (partial, Approved).
 
 **`cycle_count_line`** — `id`, `cycle_count_id` FK, `part_id`, `location_id`, `lot_number` (U per count, composite FK to `lot`), `abc_class` and `tolerance_pct` (**snapshots** taken at count creation, so a later setting change does not restate history), `system_qty` (snapshot, **never shown to counters**: absent from the API response for Open counts), `counted_qty`, `counted_by`, `counted_at`, `recount_qty`, `recounted_by`, `recounted_at` (**both counter columns required for R-4**), and generated columns: `final_qty = COALESCE(recount_qty, counted_qty)`, `first_variance_qty = counted_qty - system_qty`, `variance_qty = final_qty - system_qty`, `first_in_tolerance` and `final_in_tolerance` (`abs(qty - system_qty) * 100 <= system_qty * tolerance_pct`, exact integer/numeric arithmetic). CHECKs: a quantity and its actor columns appear together; a recount requires a count. **KPI-7 Q-D:** the contract uses `first_in_tolerance`; both exist so Kenji can choose (section 8).
 
@@ -170,8 +171,8 @@ Deferred constraint triggers (checked at COMMIT): **`inventory_transaction_nonne
 |------|------|----------|
 | `v_on_hand` | one per (part, location, lot) with `SUM(qty_change) <> 0` | the on-hand view (docs/08); a view, **never a stored column** |
 | `v_on_hand_detail` | `v_on_hand` + part number/description/ABC, location code/type, `on_hold` | R4 and E-32 |
-| `v_shipment_delivery` | one per **Shipped** shipment: `ship_date`, `shipped_at`, `days_late_vs_promise`, `days_late_vs_requested`, `in_full`, `ready_to_pack_at` (first Ready to Pack), `cycle_hours` | KPI-1, KPI-2, KPI-6, R1 |
-| `v_shipment_quality` | one per **non-cancelled** shipment: status, `ship_date`, first verification (`first_verified_at`, `first_verified_business_date`, `first_result`), `error_count`, `internal_error_count` (Before ship), `escape_error_count` (After ship) | KPI-3, KPI-4, C2 |
+| `v_shipment_delivery` | one per **Shipped** shipment: `ship_date`, `shipped_at`, `days_late_vs_promise`, `days_late_vs_requested`, `in_full`, `ready_to_pack_at` (first Ready to Pack), `cycle_hours` (unrounded `double precision`, UD-10) | KPI-1, KPI-2, KPI-6, R1 |
+| `v_shipment_quality` | one per **non-cancelled** shipment: status, `ship_date`, first verification (`first_verified_at`, `first_verified_business_date`, `first_result`), `error_count` (countable errors, UD-9), `internal_error_count` (Before ship), `escape_error_count` (countable After ship) | reports; must agree with kpi-spec 6.2/6.3 (the module uses base tables) |
 | `v_inventory_transaction` | ledger row + `reference_type` (`receipt|shipment|cycle_count|manual`) and `reference_id` (receipt id, **shipment id**, count id) | contract section 7 |
 
 Tolerance (days) and basis (promise or requested) are **applied by the KPI module**, not by the views, so the views never hold a second copy of a setting.
@@ -231,7 +232,8 @@ Verified on the hand fixture C (seed-plan section 11): lot `L2611-004`, receipt 
 | `set_updated_at` | 16 mutable tables | real `updated_at` |
 | `status_history_chain_check` | `shipment_status_history` | chain and non-decreasing time |
 | FK `(from_status, to_status)` | `shipment_status_history` -> `ref_shipment_transition` | valid state machine |
-| `cycle_count_approval_guard` | `cycle_count` | R-4, Approved is terminal |
+| `cycle_count_approval_guard` + `cycle_count_approver_not_submitter_chk` | `cycle_count` | R-4 (counter, recounter, submitter; UD-2), Approved is terminal |
+| `shipment_lock_guard`, `shipment_line_lock_guard` | `shipment`, `shipment_line` | UD-3 / R-14: Shipped and Cancelled are terminal; only correctable columns change |
 | `inventory_transaction_nonnegative` (deferred) | ledger | no negative on-hand |
 | `inventory_transaction_transfer_balanced` (deferred) | ledger | two balanced TRANSFER legs |
 | CHECKs | see 4.x | R-1 (`verified_by <> packer_id`, `verified_by <> packed_by`), no Shipped without verification, late reason, paperwork subtype, status/field consistency |
@@ -257,17 +259,17 @@ At the seeded volume (about 4,000 rows) every query is cheap; the indexes docume
 
 ## 8. KPI support matrix and reference queries
 
-Every V1-CORE KPI, chart and report has its inputs in the schema. These queries are the **oracle** used to compute the hand-fixture expectations (seed-plan section 11); they are tested against fixtures A, B and C. Kenji's single KPI module is the implementation; if it disagrees with a query below, resolve it in `docs/05`.
+*(T-022: KPI-3/KPI-4 queries replaced by [kpi-spec](../kpi/kpi-spec.md) §6.2/§6.3, kpi-spec S-3.)* The KPI module uses this base-table SQL; the views `v_shipment_quality` / `v_shipment_delivery` follow the same countable-error rule and are a convenience for reports only (kpi-spec S-2). Every V1-CORE KPI, chart and report has its inputs in the schema. These queries are the **oracle** used to compute the hand-fixture expectations (seed-plan section 11); they are tested against fixtures A, B and C. Kenji's single KPI module is the implementation; if it disagrees with a query below, resolve it in `docs/05`.
 
 | ID | Needs | Source |
 |----|-------|--------|
 | KPI-1 On-time % | `ship_date`, `promise_date` or `requested_date`, tolerance, basis | `v_shipment_delivery` |
 | KPI-2 OTIF % | + every line `qty_shipped >= qty_ordered` | `v_shipment_delivery.in_full` |
-| KPI-3 Error rate, errors per 100, internal vs escape | shipments verified or shipped in period, errors, stage | `v_shipment_quality` |
-| KPI-4 FPY | first verification (attempt 1) result, error count | `v_shipment_quality` |
+| KPI-3 Error rate, errors per 100, internal vs escape | Shipped shipments by actual `ship_date` (UD-8); countable errors (UD-9: Before ship, or After ship with `packaging_related`) | base tables (kpi-spec 6.2) |
+| KPI-4 FPY | first verification (attempt 1) result and business date; countable errors of any stage (UD-9) | base tables (kpi-spec 6.3) |
 | KPI-5 Rework frequency, minutes | rework events completed in period, shipped count | `rework_event` |
 | KPI-6 Cycle time median/P90 | first Ready to Pack timestamp, `shipped_at` | `v_shipment_delivery.cycle_hours` |
-| KPI-7 Inventory accuracy | approved count lines | `cycle_count_line` + `cycle_count` |
+| KPI-7 Inventory accuracy | approved count lines; **first count is primary** (UD-7), after recount secondary | `cycle_count_line` + `cycle_count` |
 | C1, C2, C3, R1, R3, R4, R7 | as above plus `shipment`, `packaging_error.category`, `v_on_hand_detail`, section 5 | |
 
 ```sql
@@ -279,20 +281,38 @@ SELECT COUNT(*) AS shipped,
   percentile_cont(0.9) WITHIN GROUP (ORDER BY cycle_hours) AS p90_cycle_h   -- linear interpolation [A]
   FROM v_shipment_delivery WHERE ship_date BETWEEN $1 AND $2;
 
--- KPI-3 and KPI-4 (period: first verification business date, or ship date for the KPI-3 denominator [A, Kenji to confirm])
-SELECT COUNT(*) FILTER (WHERE first_verified_business_date BETWEEN $1 AND $2 OR ship_date BETWEEN $1 AND $2) AS denominator_kpi3,
-       COUNT(*) FILTER (WHERE (first_verified_business_date BETWEEN $1 AND $2 OR ship_date BETWEEN $1 AND $2) AND error_count > 0) AS shipments_with_error,
-       SUM(error_count) FILTER (WHERE first_verified_business_date BETWEEN $1 AND $2 OR ship_date BETWEEN $1 AND $2) AS errors,
-       SUM(internal_error_count) AS internal_catches, SUM(escape_error_count) AS customer_escapes,
-       COUNT(*) FILTER (WHERE first_verified_business_date BETWEEN $1 AND $2) AS verified,
-       COUNT(*) FILTER (WHERE first_verified_business_date BETWEEN $1 AND $2 AND first_result = 'Pass' AND error_count = 0) AS first_pass_no_error
-  FROM v_shipment_quality;
+-- KPI-3 (kpi-spec 6.2, UD-8): population = Shipped shipments by actual ship_date; numerator = shipments with at least one
+-- COUNTABLE error (UD-9: Before ship, or After ship AND packaging_related), whenever the error was detected.
+SELECT COUNT(*)                                            AS denominator_kpi3,
+       COUNT(*) FILTER (WHERE COALESCE(ec.errors, 0) > 0)  AS shipments_with_error,
+       COALESCE(SUM(ec.errors), 0)                         AS errors,
+       COALESCE(SUM(ec.internal), 0)                       AS internal_catches,
+       COALESCE(SUM(ec.escape), 0)                         AS customer_escapes,
+       COALESCE(SUM(ec.excluded), 0)                       AS excluded_errors
+  FROM shipment s
+  LEFT JOIN LATERAL (
+    SELECT COUNT(*) FILTER (WHERE e.detected_stage = 'Before ship' OR e.packaging_related)       AS errors,
+           COUNT(*) FILTER (WHERE e.detected_stage = 'Before ship')                              AS internal,
+           COUNT(*) FILTER (WHERE e.detected_stage = 'After ship' AND e.packaging_related)       AS escape,
+           COUNT(*) FILTER (WHERE e.detected_stage = 'After ship' AND NOT e.packaging_related)   AS excluded
+      FROM packaging_error e WHERE e.shipment_id = s.id) ec ON true
+ WHERE s.status = 'Shipped' AND s.ship_date BETWEEN $1 AND $2;
+
+-- KPI-4 (kpi-spec 6.3, UD-9): first verification business date; pass AND no countable error of any stage or detection date.
+SELECT COUNT(*) AS verified,
+       COUNT(*) FILTER (WHERE v.result = 'Pass' AND COALESCE(ec.errors, 0) = 0) AS first_pass_no_error
+  FROM shipment_verification v
+  JOIN shipment s ON s.id = v.shipment_id AND s.status <> 'Cancelled'
+  LEFT JOIN LATERAL (SELECT COUNT(*) AS errors FROM packaging_error e
+                      WHERE e.shipment_id = s.id AND (e.detected_stage = 'Before ship' OR e.packaging_related)) ec ON true
+ WHERE v.attempt_no = 1 AND v.business_date BETWEEN $1 AND $2;
 
 -- KPI-5 (events completed in period; divide by shipments shipped in period)
 SELECT COUNT(*) AS rework_events, SUM(minutes) AS total_minutes, round(AVG(minutes), 2) AS avg_minutes
   FROM rework_event WHERE completed_business_date BETWEEN $1 AND $2;
 
--- KPI-7 (approved counts, period on approved_business_date; Q-D: first vs final)
+-- KPI-7 (approved counts, period on approved_business_date). UD-7: FIRST-COUNT accuracy is the PRIMARY metric (the tile);
+-- after-recount accuracy is secondary (extra.after_recount_pct).
 SELECT round(100.0 * COUNT(*) FILTER (WHERE l.first_in_tolerance) / NULLIF(COUNT(*), 0), 1) AS accuracy_first_count_pct,
        round(100.0 * COUNT(*) FILTER (WHERE l.final_in_tolerance) / NULLIF(COUNT(*), 0), 1) AS accuracy_after_recount_pct,
        SUM(abs(l.variance_qty)) AS absolute_variance_units
@@ -330,19 +350,21 @@ Items where the schema differs from `docs/api/contract.md` (DRAFT 2) or `docs/de
 | 6 | Demo-reset spacing: contract E-52 "minimum 60 s", matrix R-9 / security plan PD-3 "10 minutes" | Not a schema matter; `last_demo_reset_at` supports either. Matrix is authoritative (10 min). | Diego |
 | 7 | Contract 1.8: failed login records the attempted username (<= 64 chars); security plan section 9: only if it matches an existing user, else `unknown` | Not a schema matter (`changes` is free `jsonb`); the stricter security-plan rule is recommended | Diego, Sasha |
 | 8 | Contract 1.6 mixes clocks: user-entered times default to `business_now`, event times are real | See 3.3 item 1: rework start/complete must use one clock | Diego, Marcus |
-| 9 | Contract E-12: late reason required when `ship_date > promise_date + tolerance`; the database CHECK requires a late reason when `ship_date > promise_date` | With tolerance 0 (default) identical. With tolerance > 0, a ship date inside the window needs a reason in the database but not in the API. Either relax the CHECK in a migration (drop `shipment_late_reason_chk`) or make the API require it. Recommended: **keep tolerance at 0 in v1** (Q for Kenji/Priya) | Diego, Kenji |
+| 9 | ~~Contract E-12: late reason required when `ship_date > promise_date + tolerance`~~ | **Closed (UD-1, user decision 2026-11-26):** required whenever `ship_date > promise_date`, regardless of tolerance; the CHECK stays and matches the contract | — |
 | 10 | Contract Q-I formats: part number "3..30" and revision "1..10" free text; no rule that the revision is the part number's suffix | DB requires `^[A-Z0-9][A-Z0-9-]{2,29}$`, revision `^[A-Z0-9]{1,10}$` and `part_number LIKE '%-' || revision`. The API's Zod rules must be at least as strict (or drop the LIKE check) so no valid API request can cause a 500. | Diego |
 | 11 | Contract 1.7 gate G1/G2 by timestamps | `shipment.rework_episode` and `packaging_error.rework_episode` added (answers Q-K); optional for Diego to use | Diego |
 | 12 | Contract E-18 `detected_by_role` rules | Encoded as CHECKs (Customer only After ship; After ship only Quality/Customer). If Diego relaxes the rule, the CHECK must change in a migration. | Diego |
 | 13 | Contract E-12 `qty_shipped` 0..`qty_ordered`, `location_id` type Stock/FG/Shipping | Quantity bound is a CHECK on `>= 0` only; the upper bound and location type are app rules | Diego |
 | 14 | `shipment.verified_by` required for Shipped (`shipment_shipped_fields_chk`) | Matches E-12 ("status must be Verified"); the seed provides it. A migration that ever allows shipping without verification would break the check by design. | Diego |
 | 15 | Contract Q-D: KPI-7 on the **first** count | Both `first_in_tolerance` and `final_in_tolerance` are stored; recommendation in seed-plan: report first-count as the headline, recount as the second number (docs/03 3.3 secondary number) | Kenji |
-| 16 | Backlog US-012 mentions "a small number Delivered"; Delivered is deferred (US-026) | The seed contains **no Delivered** shipments (status not in the CHECK until migration 0002) | Priya |
+| 16 | Backlog US-012 mentioned "a small number Delivered" | **Closed (UD-6):** Delivered is removed from v1; no status, column, transition or seed row | — |
 | 17 | UI 14.6 hold owning department: "data model only has hold_reason_id" | Resolved: `shipment.hold_owner_dept` (contract 14.6); reason codes carry no department | Maya |
 | 18 | UI 14.8 lot format `L<yy><ww>-<nnn>` | Not enforced by the database (contract Q-I regex is wider); the seed follows it; the UI shows a hint | Maya, Diego |
 | 19 | UI 14.7 corrective action owner/due required | `owner_id` and `due_date` are NOT NULL | Maya |
 | 20 | UI 14.14 packaging-instruction display | `part.packaging_instruction_ref` + `part.revision` are sufficient | Maya |
 | 21 | Scan limit | A targeted scan of ui-spec section 14 and the field names it uses found no field without a column; **I did not read all 1,659 lines of the UI spec screen by screen**. Felix/Maya should flag any screen field that has no column in section 4. | Maya |
+
+**T-022 resolutions (Marcus, 2026-11-26, user decisions UD-1 to UD-6 and kpi-spec S-1 to S-3):** #9 closed by UD-1; #16 closed by UD-6; the approver-submitter CHECK is restored (UD-2, reverses D-13); shipments lock after Shipped/Cancelled (UD-3); severity Low/Medium/High/Critical (UD-5); `packaging_related` added and KPI-3/KPI-4 oracles replaced (UD-8, UD-9).
 
 **T-016 resolutions (Marcus, 2026-11-26; details in [consistency-review.md](../plan/consistency-review.md)):** #1, #2, #4 accepted (name and shape mapping lives in the repo layer). #3 the API returns `putaway_at: null` (D-4). #5 the reset **truncates** `audit_log` and re-inserts one `DEMO_RESET` row, as the contract says (D-5). #6 and #7 the contract already says 10 minutes and "`unknown` unless the user exists" (D-6, D-7). #8 resolved (D-1). #9 the late reason is required when `ship_date > promise_date`, whatever the tolerance setting; the CHECK stays (D-2). #10 Zod mirrors the DB regexes and the suffix rule (D-3). #11 the rework gate uses `rework_episode` (D-11). #12, #13, #14 accepted as they are. New in T-016: the lot registry rule (D-12), the removal of the approver-submitter CHECK (D-13), and the contract now validates `requested_date >= order_date` (D-14).
 
@@ -350,7 +372,7 @@ Items where the schema differs from `docs/api/contract.md` (DRAFT 2) or `docs/de
 
 | Item | Story | Where it goes | Why it is not in 0001 |
 |------|-------|---------------|-----------------------|
-| `shipment.delivered_date`, status `Delivered`, transition Shipped -> Delivered | US-026 | migration 0002 | Delivered is not built |
+| `shipment.delivered_date`, status `Delivered`, transition Shipped -> Delivered | US-026 (removed, UD-6) | none in v1 (v2 carrier integration) | Removed by user decision UD-6 |
 | `archived_at`, `archived_by` on shipment, packaging_error, receipt (soft delete) | US-010 | migration 0003 | No delete/archive action in the core; the database forbids deletes instead |
 | `receipt.putaway_at`, KPI-8 view | US-064 | migration 0004 | KPI-8 deferred (the target setting is kept because US-008 lists it) |
 | ADJUST without a count line | US-040 | migration 0005 | Manual adjustment deferred; the CHECK currently forbids it |
@@ -366,10 +388,10 @@ Items where the schema differs from `docs/api/contract.md` (DRAFT 2) or `docs/de
 |---|----------|-------|
 | Q-A | **Decided T-016: Option A** (D-1) | closed |
 | DQ-1 | **Decided T-016:** yes, truncate it and re-insert one `DEMO_RESET` row (D-5) | closed |
-| DQ-2 | KPI-7 headline: first count or after recount (both stored)? | Kenji |
-| DQ-3 | KPI-3 denominator "verified or shipped in period": confirm the two anchors (verification business date OR ship date) | Kenji |
-| DQ-4 | KPI-4: a customer-found error after a clean first pass makes the shipment **not** first-pass (literal docs/05 wording "with no error"). Confirm. | Kenji |
-| DQ-5 | P90 method (linear interpolation, `percentile_cont`) and weekly buckets (ISO week, Monday start) | Kenji |
+| DQ-2 | **Decided UD-7:** first count is the headline; after recount is secondary | closed |
+| DQ-3 | **Decided UD-8:** KPI-3 uses Shipped shipments by actual ship date (kpi-spec 6.2) | closed |
+| DQ-4 | **Decided UD-9:** yes, when the error is packaging-related (`packaging_related`, kpi-spec 6.1) | closed |
+| DQ-5 | **Decided UD-10:** `percentile_cont` with linear interpolation everywhere (kpi-spec 8) | closed |
 | DQ-6 | **Decided T-016:** the late reason is required when `ship_date > promise_date`; the CHECK stays (D-2). Priya to confirm the product reading of US-022 | Priya |
 | DQ-7 | **Decided T-016** (D-1) | closed |
 | DQ-8 | **Decided T-016:** no, the triggers stay enabled (D-10) | closed |

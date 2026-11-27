@@ -1,0 +1,33 @@
+---
+// Inline decorative icon (currentColor). Always aria-hidden; meaning is carried by adjacent text.
+export type IconName =
+  | 'calendar' | 'info' | 'check' | 'warning' | 'error' | 'external' | 'lock'
+  | 'planned' | 'ready' | 'packing' | 'verified' | 'shipped' | 'hold' | 'rework' | 'cancelled'
+  | 'sev-low' | 'sev-medium' | 'sev-high' | 'sev-critical';
+interface Props { name: IconName; solid?: boolean }
+const { name, solid = false } = Astro.props;
+
+// 24x24 stroke paths
+const paths: Record<IconName, string> = {
+  calendar: 'M3 6h18v15H3z M3 10h18 M8 3v5 M16 3v5',
+  info: 'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18z M12 11v6 M12 7.5v.5',
+  check: 'M4 12l5 5L20 6',
+  warning: 'M12 3l10 18H2z M12 10v5 M12 18v.5',
+  error: 'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18z M9 9l6 6 M15 9l-6 6',
+  external: 'M14 4h6v6 M20 4l-9 9 M18 14v6H4V6h6',
+  lock: 'M5 11h14v10H5z M8 11V7a4 4 0 0 1 8 0v4',
+  planned: 'M12 4a8 8 0 1 0 0 16 8 8 0 0 0 0-16z',
+  ready: 'M4 8l8-4 8 4v8l-8 4-8-4z M4 8l8 4 8-4 M12 12v8',
+  packing: 'M4 8l8-4 8 4v8l-8 4-8-4z M8 6l8 4',
+  verified: 'M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z M8.5 12l2.5 2.5L15.5 10',
+  shipped: 'M2 6h12v10H2z M14 10h4l4 3v3h-8z M6 19a2 2 0 1 0 0-.01 M17 19a2 2 0 1 0 0-.01',
+  hold: 'M9 5v14 M15 5v14',
+  rework: 'M20 12a8 8 0 1 1-3-6.2 M20 4v5h-5',
+  cancelled: 'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18z M6 18L18 6',
+  'sev-low': 'M12 5a7 7 0 1 0 0 14 7 7 0 0 0 0-14z',
+  'sev-medium': 'M12 4l9 16H3z',
+  'sev-high': 'M12 2l10 10-10 10L2 12z',
+  'sev-critical': 'M8 3h8l5 5v8l-5 5H8l-5-5V8z M12 8v5 M12 16v.5',
+};
+---
+<svg class:list={['icon', { 'icon--solid': solid }]} viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d={paths[name]} /></svg>

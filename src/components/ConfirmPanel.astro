@@ -1,0 +1,26 @@
+---
+// Confirm page body (works without JS): consequences list + POST form with CSRF + confirm/cancel.
+// Extra fields (reason, notes) go in the default slot, inside the form.
+import CsrfField from './CsrfField.astro';
+interface Props {
+  title: string;
+  action: string;
+  confirmLabel: string;
+  cancelHref: string;
+  items?: string[];
+  danger?: boolean;
+}
+const { title, action, confirmLabel, cancelHref, items = [], danger = false } = Astro.props;
+---
+<section class:list={['confirm', { 'confirm--danger': danger }]}>
+  <h2 class="confirm__title">{title}</h2>
+  {items.length > 0 && <ul class="confirm__list">{items.map((i) => <li>{i}</li>)}</ul>}
+  <form class="form" method="post" action={action} novalidate>
+    <CsrfField />
+    <slot />
+    <div class="action-row form-actions">
+      <button class:list={['btn', danger ? 'btn--danger' : 'btn--primary']} type="submit">{confirmLabel}</button>
+      <a class="btn btn--link" href={cancelHref}>Cancel</a>
+    </div>
+  </form>
+</section>

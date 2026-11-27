@@ -23,29 +23,15 @@ All data is **fictional** (Cobalt Ridge Components, Inc.). This is a **design do
 | # | Folder | Delivers | Story | When |
 |---|--------|----------|-------|------|
 | **0001** | `0001_core_schema` | Everything in schema.md marked V1-CORE: users, sessions, login throttle, audit, settings (with defaults), lookups, lots, shipping, quality, inventory, cycle counts, triggers, views | all V1-CORE | Foundation (B1) |
-| 0002 | `0002_delivered_status` | `shipment.delivered_date`, status `Delivered`, transition `Shipped -> Delivered` | US-026 (deferred) | v1.1 |
+| ~~0002~~ | (removed, UD-6) | Delivered status and `delivered_date` are **removed from v1** (user decision UD-6, no carrier integration). A delivered status returns only with a v2 carrier integration and then gets its own migration number. Numbers 0003-0005 keep their planned slugs. | US-026 (removed) | v2 |
 | 0003 | `0003_archive_columns` | `archived_at`, `archived_by` on `shipment`, `packaging_error`, `receipt`; partial indexes; views and list queries add `WHERE archived_at IS NULL` | US-010 (deferred) | v1.1 |
 | 0004 | `0004_receipt_putaway` | `receipt.putaway_at`; KPI-8 view | US-064 (deferred) | v1.1 |
 | 0005 | `0005_manual_adjustment` | relax `inventory_transaction_adjust_chk` so ADJUST may exist without a count line (Supervisor-approved manual adjustment) | US-040 (deferred) | v1.1 |
 | — | (none) | US-004 user management, US-036 release/reject held stock, US-025/062/063/084 lists and filters, charts C4-C6, reports R2/R5/R6/R8 need **no new tables or columns** (they use data already in 0001) | | |
 
-Planned DDL for 0002-0005 (illustrative; each is finalized when its story is scheduled):
+Planned DDL for 0003-0005 (illustrative; each is finalized when its story is scheduled):
 
 ```sql
--- 0002_delivered_status
-ALTER TABLE shipment ADD COLUMN delivered_date date;                       -- expand: nullable, no default
-ALTER TABLE shipment DROP CONSTRAINT shipment_status_check;
-ALTER TABLE shipment ADD CONSTRAINT shipment_status_check CHECK (status IN
-  ('Planned','Ready to Pack','Packing','Verified','Shipped','Delivered','On Hold','Rework','Cancelled'));
-ALTER TABLE shipment DROP CONSTRAINT shipment_shipped_fields_chk;           -- re-create so Delivered keeps the ship fields
-ALTER TABLE shipment ADD CONSTRAINT shipment_shipped_fields_chk CHECK (
-  (status IN ('Shipped','Delivered') OR (ship_date IS NULL AND shipped_at IS NULL))
-  AND (status NOT IN ('Shipped','Delivered') OR (ship_date IS NOT NULL AND shipped_at IS NOT NULL AND carrier_id IS NOT NULL
-       AND packages_count IS NOT NULL AND total_weight_lb IS NOT NULL AND verified_by IS NOT NULL)));
--- shipment_late_reason_chk and shipment_dates_chk are re-created the same way (late reason applies to Delivered too).
-INSERT INTO ref_shipment_transition VALUES ('Shipped','Delivered');
--- Views v_shipment_delivery / v_shipment_quality: CREATE OR REPLACE with status IN ('Shipped','Delivered').
-
 -- 0003_archive_columns
 ALTER TABLE shipment        ADD COLUMN archived_at timestamptz, ADD COLUMN archived_by bigint REFERENCES app_user(id);
 ALTER TABLE packaging_error ADD COLUMN archived_at timestamptz, ADD COLUMN archived_by bigint REFERENCES app_user(id);
@@ -68,6 +54,14 @@ ALTER TABLE inventory_transaction ADD CONSTRAINT inventory_transaction_adjust_ch
 2. `cycle_count`: the CHECK `approved_by IS NULL OR approved_by <> submitted_by` was removed. Matrix R-4 forbids approval only by someone who **entered or recounted a line**, and the `cycle_count_approval_guard` trigger already enforces that. A Supervisor who only pressed Submit is allowed by the matrix, so the CHECK would have turned a valid request into a 500 (D-13).
 3. Header comment updated. Nothing else changed.
 
+**DDL changes made by T-022 (Marcus, 2026-11-26; user decisions UD-1 to UD-6 and Kenji's KPI spec S-1/S-2; re-run the 0001 tests):**
+1. *(UD-2)* `cycle_count` regains the CHECK, now named `cycle_count_approver_not_submitter_chk` (`approved_by IS NULL OR approved_by <> submitted_by`). The user widened matrix R-4: the approver may be neither a counter or recounter (trigger `cycle_count_approval_guard`, kept) nor the submitter. This reverses T-016 D-13, which was based on the narrower rule.
+2. *(UD-3)* New triggers `shipment_lock_guard` (BEFORE UPDATE on `shipment`) and `shipment_line_lock_guard` (BEFORE UPDATE on `shipment_line`). Once a shipment is Shipped or Cancelled, its status is terminal. Only the correctable columns of the Supervisor correction action (contract E-53) may change: `customer_po`, `requested_date`, `promise_date`, `ship_date`, `carrier_id`, `tracking_number`, `service_level`, `packages_count`, `total_weight_lb`, `late_reason_id`, the four `doc_*` flags, `notes`, and on lines only `short_note`. The other CHECKs still apply to the corrected row, for example the late reason and the ship fields. **Consequence for the ship action (E-12):** update the lines and post the SHIP rows first, then set the status to Shipped. The seed inserts final-state rows and never updates them, so it is not affected. INSERTs are not guarded, so the seed can insert lines of Shipped shipments; the API refuses new lines on locked shipments (409 `SHIPMENT_LOCKED`).
+3. *(UD-5)* `packaging_error.severity` is `Low | Medium | High | Critical`.
+4. *(UD-6)* The planned migration 0002 (Delivered) is withdrawn. The status CHECK and `ref_shipment_transition` were already free of Delivered.
+5. *(UD-9, kpi-spec S-1)* `packaging_error.packaging_related boolean NOT NULL DEFAULT true` with `packaging_error_related_chk` (`packaging_related OR detected_stage = 'After ship'`).
+6. *(kpi-spec S-2)* `v_shipment_delivery.cycle_hours` is unrounded `double precision`. `v_shipment_quality` error counts use the countable-error rule. The KPI module uses the base-table SQL of kpi-spec §6, and the views must agree with it (tested in the harness).
+
 ## 3. 0001_core_schema — full proposed DDL
 
 ```sql
@@ -79,6 +73,8 @@ ALTER TABLE inventory_transaction ADD CONSTRAINT inventory_transaction_adjust_ch
 -- server from business_today), except rework_event.completed_business_date, which is generated from completed_at.
 -- User-entered business instants (detected_at, rework started_at AND completed_at, arrived_at) have no default:
 -- the app passes business_now unless the user types a value.
+-- T-022 (user decisions 2026-11-26): UD-2 approver <> submitter CHECK; UD-3 shipment/line lock triggers;
+-- UD-5 severity Low/Medium/High/Critical; UD-6 no Delivered status; UD-9 packaging_error.packaging_related.
 
 -- ---------------------------------------------------------------------------
 -- 1. Helper trigger functions
@@ -380,6 +376,46 @@ $$;
 CREATE TRIGGER shipment_line_delete_guard BEFORE DELETE ON shipment_line
   FOR EACH ROW EXECUTE FUNCTION shipment_line_delete_guard();
 
+-- UD-3 / matrix R-14: Shipped and Cancelled shipments are locked. Status is terminal; only the columns that the
+-- Supervisor correction action (contract E-53, P-28) may change are allowed to differ. Everything else raises.
+-- The ship action must therefore update shipment_line rows BEFORE it sets shipment.status = 'Shipped'.
+CREATE FUNCTION shipment_lock_guard() RETURNS trigger LANGUAGE plpgsql AS $$
+DECLARE
+  correctable text[] := ARRAY['customer_po','requested_date','promise_date','ship_date','carrier_id','tracking_number',
+                              'service_level','packages_count','total_weight_lb','late_reason_id','doc_packing_slip',
+                              'doc_bol','doc_coc','doc_labels','notes','updated_at'];
+BEGIN
+  IF OLD.status NOT IN ('Shipped','Cancelled') THEN
+    RETURN NEW;
+  END IF;
+  IF NEW.status IS DISTINCT FROM OLD.status THEN
+    RAISE EXCEPTION 'shipment % is % and locked: its status cannot change', OLD.shipment_no, OLD.status
+      USING ERRCODE = 'restrict_violation';
+  END IF;
+  IF (to_jsonb(NEW) - correctable) IS DISTINCT FROM (to_jsonb(OLD) - correctable) THEN
+    RAISE EXCEPTION 'shipment % is % and locked: only correctable fields may change (correction action)', OLD.shipment_no, OLD.status
+      USING ERRCODE = 'restrict_violation';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+CREATE TRIGGER shipment_lock_guard BEFORE UPDATE ON shipment
+  FOR EACH ROW EXECUTE FUNCTION shipment_lock_guard();
+
+-- UD-3: lines of a Shipped or Cancelled shipment are locked too, except the short-shipment note (correction action).
+CREATE FUNCTION shipment_line_lock_guard() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+  IF (SELECT status FROM shipment WHERE id = OLD.shipment_id) IN ('Shipped','Cancelled')
+     AND (to_jsonb(NEW) - ARRAY['short_note','updated_at']) IS DISTINCT FROM (to_jsonb(OLD) - ARRAY['short_note','updated_at']) THEN
+    RAISE EXCEPTION 'shipment_line % belongs to a locked shipment: only short_note may change (correction action)', OLD.id
+      USING ERRCODE = 'restrict_violation';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+CREATE TRIGGER shipment_line_lock_guard BEFORE UPDATE ON shipment_line
+  FOR EACH ROW EXECUTE FUNCTION shipment_line_lock_guard();
+
 -- Allowed status transitions (reference data owned by the migration, not by the seed).
 CREATE TABLE ref_shipment_transition (
   from_status text NOT NULL,
@@ -413,11 +449,12 @@ CREATE TABLE packaging_error (
   category            text        NOT NULL CHECK (category IN ('Wrong part','Wrong quantity','Incorrect label','Paperwork',
                                                                'Packaging method','Damage','Traceability','Other')),
   paperwork_subtype   text        CHECK (paperwork_subtype IN ('Packing slip','BOL','C of C','Customer-specific form','Commercial invoice')),
-  severity            text        NOT NULL CHECK (severity IN ('Minor','Major','Critical')),
+  severity            text        NOT NULL CHECK (severity IN ('Low','Medium','High','Critical')),  -- UD-5
   description         text        NOT NULL CHECK (length(btrim(description)) BETWEEN 1 AND 1000),
   root_cause_category text        CHECK (root_cause_category IN ('Method','People','Material','Machine','Measurement','Environment')),
   root_cause_note     text        CHECK (length(root_cause_note) <= 2000),
   status              text        NOT NULL DEFAULT 'Open' CHECK (status IN ('Open','Contained','Closed')),
+  packaging_related   boolean     NOT NULL DEFAULT true,   -- UD-9 / kpi-spec S-1: false only for a customer-found error not caused by our packing
   closed_at           timestamptz,
   reported_by         bigint      NOT NULL REFERENCES app_user(id),
   created_at          timestamptz NOT NULL DEFAULT now(),
@@ -428,7 +465,8 @@ CREATE TABLE packaging_error (
   CHECK ((status = 'Closed') = (closed_at IS NOT NULL)),
   CHECK (detected_by_role <> 'Customer' OR detected_stage = 'After ship'),
   CHECK (detected_stage <> 'After ship' OR detected_by_role IN ('Quality','Customer')),
-  CHECK (rework_episode IS NULL OR detected_stage = 'Before ship')
+  CHECK (rework_episode IS NULL OR detected_stage = 'Before ship'),
+  CONSTRAINT packaging_error_related_chk CHECK (packaging_related OR detected_stage = 'After ship')   -- UD-9
 );
 ALTER SEQUENCE packaging_error_no_seq OWNED BY packaging_error.error_no;
 CREATE INDEX packaging_error_shipment_idx ON packaging_error (shipment_id);
@@ -593,7 +631,7 @@ CREATE TABLE cycle_count (
   updated_at     timestamptz NOT NULL DEFAULT now(),
   CHECK ((status IN ('Counted','Approved')) = (submitted_by IS NOT NULL AND submitted_at IS NOT NULL)),
   CHECK ((status = 'Approved') = (approved_by IS NOT NULL AND approved_at IS NOT NULL AND approved_business_date IS NOT NULL)),
-  -- (no approved_by <> submitted_by CHECK: matrix R-4 covers counters and recounters only, D-13)
+  CONSTRAINT cycle_count_approver_not_submitter_chk CHECK (approved_by IS NULL OR approved_by <> submitted_by),  -- UD-2 (R-4 widened)
   CHECK (approved_at IS NULL OR submitted_at IS NULL OR approved_at >= submitted_at)
 );
 ALTER SEQUENCE cycle_count_no_seq OWNED BY cycle_count.count_no;
@@ -632,7 +670,8 @@ CREATE TABLE cycle_count_line (
 CREATE INDEX cycle_count_line_count_idx ON cycle_count_line (cycle_count_id);
 CREATE INDEX cycle_count_line_part_idx  ON cycle_count_line (part_id);
 
--- R-4: the approver may not be the counter or a recounter of any line (defence in depth; the API checks first).
+-- R-4 (widened by UD-2): the approver may not be the counter or a recounter of any line (this trigger) nor the
+-- submitter (cycle_count_approver_not_submitter_chk). Defence in depth; the API checks first and answers 403.
 -- An Approved count is terminal.
 CREATE FUNCTION cycle_count_approval_guard() RETURNS trigger LANGUAGE plpgsql AS $$
 BEGIN
@@ -781,22 +820,26 @@ SELECT s.id AS shipment_id, s.shipment_no, s.customer_id, s.carrier_id,
        NOT EXISTS (SELECT 1 FROM shipment_line sl
                     WHERE sl.shipment_id = s.id AND COALESCE(sl.qty_shipped, 0) < sl.qty_ordered) AS in_full,
        h.ready_to_pack_at,
-       EXTRACT(EPOCH FROM (s.shipped_at - h.ready_to_pack_at)) / 3600.0 AS cycle_hours
+       (EXTRACT(EPOCH FROM (s.shipped_at - h.ready_to_pack_at)) / 3600.0)::double precision AS cycle_hours  -- unrounded (UD-10)
   FROM shipment s
   LEFT JOIN LATERAL (SELECT MIN(changed_at) AS ready_to_pack_at
                        FROM shipment_status_history
                       WHERE shipment_id = s.id AND to_status = 'Ready to Pack') h ON true
  WHERE s.status = 'Shipped';
 
--- KPI-3, KPI-4 base rows: one row per non-cancelled shipment.
+-- KPI-3, KPI-4 helper rows: one row per non-cancelled shipment. Error counts use the countable-error rule of
+-- docs/kpi/kpi-spec.md section 3 (Before ship, or After ship and packaging_related). The KPI module uses the
+-- base-table SQL of kpi-spec sections 6.2/6.3; this view is a convenience for reports and must give the same counts.
 CREATE VIEW v_shipment_quality AS
 SELECT s.id AS shipment_id, s.shipment_no, s.status, s.customer_id, s.carrier_id, s.ship_date,
        v1.verified_at AS first_verified_at,
        v1.business_date AS first_verified_business_date,
        v1.result      AS first_result,
-       (SELECT COUNT(*) FROM packaging_error e WHERE e.shipment_id = s.id)                               AS error_count,
+       (SELECT COUNT(*) FROM packaging_error e WHERE e.shipment_id = s.id
+           AND (e.detected_stage = 'Before ship' OR e.packaging_related))                                  AS error_count,
        (SELECT COUNT(*) FROM packaging_error e WHERE e.shipment_id = s.id AND e.detected_stage = 'Before ship') AS internal_error_count,
-       (SELECT COUNT(*) FROM packaging_error e WHERE e.shipment_id = s.id AND e.detected_stage = 'After ship')  AS escape_error_count
+       (SELECT COUNT(*) FROM packaging_error e WHERE e.shipment_id = s.id AND e.detected_stage = 'After ship'
+           AND e.packaging_related)                                                                         AS escape_error_count
   FROM shipment s
   LEFT JOIN shipment_verification v1 ON v1.shipment_id = s.id AND v1.attempt_no = 1
  WHERE s.status <> 'Cancelled';
@@ -828,7 +871,8 @@ The DDL applied cleanly to PGlite 0.3 (PostgreSQL 17 engine) and the following b
 | M-6 | Out-of-range setting and impossible `reporting_date` rejected | PASS |
 | M-7 | `Shipped` without ship fields rejected | PASS |
 | M-8 | Over-drawing on-hand is rejected **at commit**; a one-legged TRANSFER is rejected at commit; unknown lot rejected; a second ADJUST for the same count line rejected | PASS |
-| M-9 | R-4: approver equal to the submitter is rejected; approver who counted or recounted any line is rejected by trigger; an Approved count is terminal | PASS |
+| M-9 | R-4 (widened by UD-2): approver equal to the submitter is rejected by CHECK; approver who counted or recounted any line is rejected by trigger; an Approved count is terminal | PASS (re-run T-022) |
+| M-12 | UD-3: a Shipped or Cancelled shipment's status and non-correctable columns (and its lines except `short_note`) cannot be updated; correctable columns can | PASS (T-022) |
 | M-10 | `TRUNCATE ... RESTART IDENTITY CASCADE` restarts identity columns and the `SH-/PE-/RC-/CC-` sequences (first new shipment is `SH-1001`); `system` settings survive when `setting` is not in the TRUNCATE list | PASS |
 | M-11 | Fixtures A, B, C produce the expected KPI-1/2/3/4/5/6/7 values, on-hand and lot-trace numbers | PASS (all values in seed-plan section 11) |
 

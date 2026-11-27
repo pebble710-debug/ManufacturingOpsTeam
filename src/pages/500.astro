@@ -1,0 +1,19 @@
+---
+// Generic server-error page (S26): no stack, SQL or internals. The reference id helps support correlate logs.
+import AppLayout from '../layouts/AppLayout.astro';
+import { appLocals } from '../components/locals';
+export const prerender = false;
+const { user, requestId } = appLocals(Astro.locals);
+const ref = (requestId ?? crypto.randomUUID().replace(/-/g, '').slice(0, 6)).toUpperCase();
+---
+<AppLayout title="Something went wrong">
+  <div class="error-state" role="group" aria-labelledby="err-title">
+    <h1 class="error-state__title" id="err-title">Something went wrong on our side</h1>
+    <p class="error-state__text">Your changes were not saved. Try again. If it keeps happening, tell your Supervisor.</p>
+    <p class="error-state__ref">Reference: {ref}</p>
+    <div class="error-state__actions">
+      <a class="btn btn--primary" href={Astro.url.pathname}>Try again</a>
+      <a class="btn btn--secondary" href={user ? '/dashboard' : '/login'}>{user ? 'Dashboard' : 'Sign in'}</a>
+    </div>
+  </div>
+</AppLayout>

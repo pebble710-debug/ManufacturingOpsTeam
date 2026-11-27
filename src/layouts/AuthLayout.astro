@@ -1,0 +1,41 @@
+---
+// Signed-out pages (login). DEMO banner first, no nav, no user menu (component-classes.md section 1 notes).
+import '../styles/app.css';
+
+interface Props { title: string; description?: string }
+const { title, description } = Astro.props;
+const wall = Astro.url.searchParams.get('view') === 'wall';
+---
+<!doctype html>
+<html lang="en" class:list={[{ 'view-wall': wall }]}>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex, nofollow" />
+    {description && <meta name="description" content={description} />}
+    <title>{`${title} | Cobalt Ridge Ops (DEMO)`}</title>
+  </head>
+  <body class="app-shell">
+    <a class="skip-link" href="#main">Skip to main content</a>
+    <header>
+      <div class="demo-banner"><div class="demo-banner__inner">
+        <span class="demo-banner__label">DEMO – FICTIONAL DATA</span>
+        <span>Cobalt Ridge Components, Inc. is fictional. No real data.</span>
+      </div></div>
+      <div class="topbar"><div class="topbar__inner">
+        <div class="topbar__brand">
+          <span class="topbar__app">Cobalt Ridge Ops</span>
+          <span class="topbar__plant">Riverton plant</span>
+        </div>
+      </div></div>
+    </header>
+    <main id="main" class="auth-page" tabindex="-1">
+      <div class="auth-card stack"><slot /></div>
+    </main>
+    <footer class="site-footer"><div class="site-footer__inner">
+      <span>Educational prototype — all data fictional. Not a certified or production system.</span>
+      <a href="https://github.com/pebble710-debug/ManufacturingOpsTeam" target="_blank" rel="noopener noreferrer">GitHub repository<span class="visually-hidden"> (opens external site)</span></a>
+    </div></footer>
+    <script>import '../scripts/app.ts';</script>
+  </body>
+</html>

@@ -1,0 +1,20 @@
+---
+// Shipment status badge: icon + text + colour (never colour alone). v1 has 8 statuses; no Delivered (UD-6).
+import Icon from './Icon.astro';
+import type { IconName } from './Icon.astro';
+import type { ShipmentStatus } from './types';
+interface Props { status: ShipmentStatus }
+const { status } = Astro.props;
+const map: Record<ShipmentStatus, { cls: string; icon: IconName }> = {
+  'Planned': { cls: 'planned', icon: 'planned' },
+  'Ready to Pack': { cls: 'ready', icon: 'ready' },
+  'Packing': { cls: 'packing', icon: 'packing' },
+  'Verified': { cls: 'verified', icon: 'verified' },
+  'Shipped': { cls: 'shipped', icon: 'shipped' },
+  'On Hold': { cls: 'on-hold', icon: 'hold' },
+  'Rework': { cls: 'rework', icon: 'rework' },
+  'Cancelled': { cls: 'cancelled', icon: 'cancelled' },
+};
+const m = map[status];
+---
+{m ? <span class={`badge badge--${m.cls}`}><Icon name={m.icon} /> {status}</span> : <span class="badge badge--neutral">{String(status)}</span>}

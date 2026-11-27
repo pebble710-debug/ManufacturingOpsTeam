@@ -1,0 +1,11 @@
+---
+// Packaging-error severity (UD-5): Low, Medium, High, Critical. Shape icon + text.
+import Icon from './Icon.astro';
+import type { IconName } from './Icon.astro';
+import type { Severity } from './types';
+interface Props { severity: Severity }
+const { severity } = Astro.props;
+const key = severity.toLowerCase();
+const icon = `sev-${key}` as IconName;
+---
+<span class={`badge badge--sev-${key}`}><Icon name={icon} /> {severity}</span>

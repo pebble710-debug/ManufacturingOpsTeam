@@ -101,7 +101,7 @@ describe('Status transitions and history chain (contract 1.7)', () => {
   it('SCH-20 invalid transition (Ready to Pack -> Shipped) rejected by FK to ref_shipment_transition', async () => {
     await expectDbError(hist({ from_status: 'Ready to Pack', to_status: 'Shipped', changed_at: '2026-11-01T10:00:00Z' }), /foreign key|violates/i, FK);
   });
-  it('SCH-21 Ready to Pack -> Verified / Rework / Delivered rejected (skipping packing, no Delivered in v1)', async () => {
+  it('SCH-21 Ready to Pack -> Verified / Rework / Delivered rejected (skipping packing; Delivered removed from v1, UD-6)', async () => {
     // from_status matches the current chain tail (Ready to Pack), so only the transition table can reject these.
     await expectDbError(hist({ from_status: 'Ready to Pack', to_status: 'Verified', changed_at: '2026-11-01T10:00:00Z' }), /violates/i, FK);
     await expectDbError(hist({ from_status: 'Ready to Pack', to_status: 'Rework', changed_at: '2026-11-01T10:00:00Z' }), /violates/i, FK);
@@ -122,7 +122,7 @@ describe('Status transitions and history chain (contract 1.7)', () => {
     await hist({ from_status: 'Ready to Pack', to_status: 'Packing', changed_at: '2026-11-01T10:00:00Z' });
     expect((await one(db, `SELECT count(*)::int AS n FROM shipment_status_history WHERE shipment_id = $1`, [sid])).n).toBe(3);
   });
-  it('SCH-26 status outside the 8 values rejected (Delivered is deferred to migration 0002)', async () => {
+  it('SCH-26 status outside the 8 values rejected (Delivered removed from v1, UD-6)', async () => {
     await expectDbError(insertRow(db, 'shipment', shipmentDefaults(ids, { shipment_no: 'SH-9022', status: 'Delivered' })), /shipment_status_check/, CHECK);
   });
 });
@@ -209,7 +209,7 @@ describe('Other shipment / line / error CHECKs', () => {
     const s = await insertRow(db, 'shipment', shipmentDefaults(ids, { shipment_no: 'SH-9049' }));
     const e = (o: Record<string, unknown>) => insertRow(db, 'packaging_error', {
       shipment_id: s, detected_at: '2026-11-02T10:00:00Z', detected_by_role: 'Verifier', detected_stage: 'Before ship',
-      category: 'Wrong part', severity: 'Minor', description: 'Demo error', reported_by: U('demo.quality'), ...o });
+      category: 'Wrong part', severity: 'Low', description: 'Demo error', reported_by: U('demo.quality'), ...o });
     await expectDbError(e({ category: 'Paperwork' }), /violates check constraint/, CHECK);
     await expectDbError(e({ paperwork_subtype: 'BOL' }), /violates check constraint/, CHECK);
     await expectDbError(e({ detected_by_role: 'Customer' }), /violates check constraint/, CHECK);
@@ -222,7 +222,7 @@ describe('Other shipment / line / error CHECKs', () => {
   it('SCH-46 rework_event: composite FK keeps shipment and error consistent; completed_at >= started_at; minutes and completed_business_date generated', async () => {
     const s1 = await insertRow(db, 'shipment', shipmentDefaults(ids, { shipment_no: 'SH-9050' }));
     const s2 = await insertRow(db, 'shipment', shipmentDefaults(ids, { shipment_no: 'SH-9051' }));
-    const pe = await insertRow(db, 'packaging_error', { shipment_id: s1, detected_at: '2026-11-02T10:00:00Z', detected_by_role: 'Verifier', detected_stage: 'Before ship', category: 'Wrong part', severity: 'Minor', description: 'd', reported_by: U('demo.quality') });
+    const pe = await insertRow(db, 'packaging_error', { shipment_id: s1, detected_at: '2026-11-02T10:00:00Z', detected_by_role: 'Verifier', detected_stage: 'Before ship', category: 'Wrong part', severity: 'Low', description: 'd', reported_by: U('demo.quality') });
     const ev = (o: Record<string, unknown>) => insertRow(db, 'rework_event', { packaging_error_id: pe, shipment_id: s1, action: 'Relabel', started_at: '2026-11-02T10:00:00Z', performed_by: U('demo.shipper1'), ...o });
     await expectDbError(ev({ shipment_id: s2 }), /violates foreign key/, FK);
     await expectDbError(ev({ completed_at: '2026-11-02T09:00:00Z' }), /violates check constraint/, CHECK);
@@ -237,6 +237,80 @@ describe('Other shipment / line / error CHECKs', () => {
     const open = await ev({});
     const o = await one(db, `SELECT minutes, completed_business_date FROM rework_event WHERE id = $1`, [open]);
     expect([o.minutes, o.completed_business_date]).toEqual([null, null]);
+  });
+});
+
+describe('T-022 user decisions: severity (UD-5), packaging_related (UD-9), locked shipments (UD-3)', () => {
+  const errRow = (sid: number, o: Record<string, unknown> = {}) => insertRow(db, 'packaging_error', {
+    shipment_id: sid, detected_at: '2026-11-02T10:00:00Z', detected_by_role: 'Verifier', detected_stage: 'Before ship',
+    category: 'Wrong part', severity: 'Low', description: 'Demo error', reported_by: U('demo.quality'), ...o });
+
+  it('SCH-47 severity is exactly Low / Medium / High / Critical (UD-5); Minor and Major are rejected', async () => {
+    const s = await insertRow(db, 'shipment', shipmentDefaults(ids, { shipment_no: 'SH-9060' }));
+    for (const sev of ['Low', 'Medium', 'High', 'Critical']) await errRow(s, { severity: sev });
+    for (const sev of ['Minor', 'Major', 'low', '']) {
+      await expectDbError(errRow(s, { severity: sev }), /packaging_error_severity_check/, CHECK);
+    }
+    expect((await one(db, `SELECT count(*)::int AS n FROM packaging_error WHERE shipment_id=$1`, [s])).n).toBe(4);
+  });
+  it('SCH-48 packaging_related defaults to true; false only for an After-ship error (UD-9, kpi-spec S-1)', async () => {
+    const s = await insertRow(db, 'shipment', shippedDefaults(ids, { shipment_no: 'SH-9061' }));
+    const d = await errRow(s);
+    expect((await one(db, `SELECT packaging_related FROM packaging_error WHERE id=$1`, [d])).packaging_related).toBe(true);
+    await expectDbError(errRow(s, { packaging_related: false }), /packaging_error_related_chk/, CHECK);
+    await expectDbError(db.query(`UPDATE packaging_error SET packaging_related=false WHERE id=$1`, [d]), /packaging_error_related_chk/, CHECK);
+    await expectDbError(errRow(s, { packaging_related: null }), /null value/);
+    const a = await errRow(s, { detected_stage: 'After ship', detected_by_role: 'Customer', packaging_related: false }); // control
+    await db.query(`UPDATE packaging_error SET packaging_related=true WHERE id=$1`, [a]); // can be switched back
+  });
+
+  describe('Locked Shipped / Cancelled shipments (UD-3, matrix R-14; only the E-53 correctable columns change)', () => {
+    let shipped: number;
+    let cancelled: number;
+    let line: number;
+    beforeAll(async () => {
+      await insertLot(db, ids, 'L2611-950', 'CRC-2041-B');
+      shipped = await insertRow(db, 'shipment', shippedDefaults(ids, { shipment_no: 'SH-9070', tracking_number: 'SLP000000000001', notes: 'n' }));
+      line = await insertRow(db, 'shipment_line', { shipment_id: shipped, line_no: 1, part_id: ids.part['CRC-2041-B'], qty_ordered: 10, qty_shipped: 9, short_note: 'Short 1', lot_number: 'L2611-950', location_id: ids.loc['STK-A01'] });
+      cancelled = await insertRow(db, 'shipment', shipmentDefaults(ids, { shipment_no: 'SH-9071', status: 'Cancelled', notes: 'c' }));
+    });
+    const val = async (id: number, col: string) => (await one(db, `SELECT ${col} AS v FROM shipment WHERE id=$1`, [id])).v;
+
+    it('SCH-90 status of a Shipped or Cancelled shipment is terminal (no Shipped -> Cancelled, no Cancelled -> Planned)', async () => {
+      await expectDbError(db.query(`UPDATE shipment SET status='Cancelled', ship_date=NULL, shipped_at=NULL WHERE id=$1`, [shipped]), /locked: its status cannot change/, RESTRICT);
+      await expectDbError(db.query(`UPDATE shipment SET status='Planned' WHERE id=$1`, [cancelled]), /locked: its status cannot change/, RESTRICT);
+      expect([await val(shipped, 'status'), await val(cancelled, 'status')]).toEqual(['Shipped', 'Cancelled']);
+    });
+    it('SCH-91 non-correctable columns are refused (customer, order date, packer, verifier, shipped_at, rework fields)', async () => {
+      const bad: [string, unknown][] = [['customer_id', ids.cust.PINECREST], ['order_date', '2026-10-27'], ['packed_by', U('demo.supervisor')],
+        ['verified_by', U('demo.quality')], ['shipped_at', '2026-11-05T13:00:00Z'], ['rework_episode', 3], ['created_by', U('demo.shipper1')]];
+      for (const [col, v] of bad) {
+        await expectDbError(db.query(`UPDATE shipment SET ${col}=$1 WHERE id=$2`, [v, shipped]), /locked: only correctable fields may change/, RESTRICT);
+      }
+      await expectDbError(db.query(`UPDATE shipment SET customer_id=$1 WHERE id=$2`, [ids.cust.PINECREST, cancelled]), /locked/, RESTRICT);
+      expect(Number(await val(shipped, 'customer_id'))).toBe(ids.cust.ALDERVALE);
+    });
+    it('SCH-92 correctable columns can change (correction action): tracking, carrier, packages, weight, notes, doc flags, PO, dates', async () => {
+      await db.query(`UPDATE shipment SET tracking_number='SLP000000000002', carrier_id=$1, packages_count=2, total_weight_lb=11.25,
+        notes='corrected', doc_bol=true, customer_po='PO-FIXED', service_level='Ground', promise_date='2026-11-06' WHERE id=$2`, [ids.carrier['SwiftLane Parcel'], shipped]);
+      expect([await val(shipped, 'tracking_number'), await val(shipped, 'notes'), await val(shipped, 'packages_count')]).toEqual(['SLP000000000002', 'corrected', 2]);
+      await db.query(`UPDATE shipment SET notes='corrected too' WHERE id=$1`, [cancelled]);
+      // the other CHECKs still apply to a corrected row: making it late without a late reason is refused (UD-1)
+      await expectDbError(db.query(`UPDATE shipment SET promise_date='2026-11-04' WHERE id=$1`, [shipped]), /shipment_late_reason_chk/, CHECK);
+      await db.query(`UPDATE shipment SET promise_date='2026-11-04', late_reason_id=$1 WHERE id=$2`, [ids.reason.CARRIER_LATE, shipped]);
+      // ship fields stay impossible on a Cancelled shipment
+      await expectDbError(db.query(`UPDATE shipment SET ship_date='2026-11-05' WHERE id=$1`, [cancelled]), /shipment_shipped_fields_chk/, CHECK);
+    });
+    it('SCH-93 lines of a locked shipment: only short_note may change; quantity, lot, location, part refused; open shipment lines stay editable', async () => {
+      for (const [col, v] of [['qty_shipped', 10], ['qty_ordered', 9], ['location_id', ids.loc['FG-01']], ['lot_number', null]] as [string, unknown][]) {
+        await expectDbError(db.query(`UPDATE shipment_line SET ${col}=$1 WHERE id=$2`, [v, line]), /locked shipment: only short_note may change/, RESTRICT);
+      }
+      await db.query(`UPDATE shipment_line SET short_note='Short 1: corrected' WHERE id=$1`, [line]);
+      const open = await insertRow(db, 'shipment', shipmentDefaults(ids, { shipment_no: 'SH-9072' }));
+      const ol = await insertRow(db, 'shipment_line', { shipment_id: open, line_no: 1, part_id: ids.part['CRC-2041-B'], qty_ordered: 10 });
+      await db.query(`UPDATE shipment_line SET qty_ordered=12 WHERE id=$1`, [ol]); // control: not locked
+      await db.query(`UPDATE shipment SET customer_po='PO-OPEN-EDIT' WHERE id=$1`, [open]); // control: not locked
+    });
   });
 });
 
@@ -386,10 +460,15 @@ describe('Ledger integrity: lots, non-negative on-hand, balanced TRANSFER, one A
       await expectDbError(approve('demo.supervisor'), /approver must not be a counter or recounter of this count \(R-4\)/, CHECK); // recounted line 2
       expect((await one(db, `SELECT status FROM cycle_count WHERE id=$1`, [cc])).status).toBe('Counted');
     });
-    it('SCH-72 R-4 literal scope (D-13): a Supervisor who only submitted, and entered/recounted no line, MAY approve (no approved_by <> submitted_by CHECK)', async () => {
+    it('SCH-72 R-4 widened by UD-2: a Supervisor who only submitted (entered/recounted no line) may NOT approve; another Supervisor may', async () => {
       const bare = await insertRow(db, 'cycle_count', { scheduled_date: '2026-11-15', created_by: U('demo.supervisor') });
       await db.query(`UPDATE cycle_count SET status='Counted', submitted_by=$1, submitted_at='2026-11-16T10:00:00Z' WHERE id=$2`, [U('demo.supervisor'), bare]);
-      await db.query(`UPDATE cycle_count SET status='Approved', approved_by=$1, approved_at='2026-11-17T10:00:00Z', approved_business_date='2026-11-17' WHERE id=$2`, [U('demo.supervisor'), bare]);
+      await expectDbError(
+        db.query(`UPDATE cycle_count SET status='Approved', approved_by=$1, approved_at='2026-11-17T10:00:00Z', approved_business_date='2026-11-17' WHERE id=$2`, [U('demo.supervisor'), bare]),
+        /cycle_count_approver_not_submitter_chk/, CHECK);
+      expect((await one(db, `SELECT status FROM cycle_count WHERE id=$1`, [bare])).status).toBe('Counted');
+      // control: a different approver (stand-in user at DB level) is accepted
+      await db.query(`UPDATE cycle_count SET status='Approved', approved_by=$1, approved_at='2026-11-17T10:00:00Z', approved_business_date='2026-11-17' WHERE id=$2`, [U('demo.quality'), bare]);
       expect((await one(db, `SELECT status FROM cycle_count WHERE id=$1`, [bare])).status).toBe('Approved');
     });
     it('SCH-73 an eligible Supervisor (a different person from every counter) approves; Approved is terminal', async () => {
@@ -425,7 +504,7 @@ describe('Reset behaviour (seed-plan section 12): TRUNCATE ... RESTART IDENTITY 
     const i = await loadBase(d);
     const s = await insertRow(d, 'shipment', shipmentDefaults(i));
     expect((await one(d, `SELECT shipment_no FROM shipment WHERE id=$1`, [s])).shipment_no).toBe('SH-1001');
-    await insertRow(d, 'packaging_error', { shipment_id: s, detected_at: '2026-11-02T10:00:00Z', detected_by_role: 'Verifier', detected_stage: 'Before ship', category: 'Wrong part', severity: 'Minor', description: 'd', reported_by: i.user['demo.quality'] });
+    await insertRow(d, 'packaging_error', { shipment_id: s, detected_at: '2026-11-02T10:00:00Z', detected_by_role: 'Verifier', detected_stage: 'Before ship', category: 'Wrong part', severity: 'Low', description: 'd', reported_by: i.user['demo.quality'] });
     await insertRow(d, 'cycle_count', { scheduled_date: '2026-11-15', created_by: i.user['demo.supervisor'] });
     const saltBefore = (await one(d, `SELECT value FROM setting WHERE key='client_key_salt'`)).value;
     await d.exec(`UPDATE setting SET value='9' WHERE key='tolerance_b_pct'`);
@@ -438,7 +517,7 @@ describe('Reset behaviour (seed-plan section 12): TRUNCATE ... RESTART IDENTITY 
     const s2 = await insertRow(d, 'shipment', shipmentDefaults(i2));
     expect((await one(d, `SELECT shipment_no FROM shipment WHERE id=$1`, [s2])).shipment_no).toBe('SH-1001');
     expect(s2).toBe(1); // identity restarted
-    const pe = await insertRow(d, 'packaging_error', { shipment_id: s2, detected_at: '2026-11-02T10:00:00Z', detected_by_role: 'Verifier', detected_stage: 'Before ship', category: 'Wrong part', severity: 'Minor', description: 'd', reported_by: i2.user['demo.quality'] });
+    const pe = await insertRow(d, 'packaging_error', { shipment_id: s2, detected_at: '2026-11-02T10:00:00Z', detected_by_role: 'Verifier', detected_stage: 'Before ship', category: 'Wrong part', severity: 'Low', description: 'd', reported_by: i2.user['demo.quality'] });
     expect((await one(d, `SELECT error_no FROM packaging_error WHERE id=$1`, [pe])).error_no).toBe('PE-0001');
     const cc = await insertRow(d, 'cycle_count', { scheduled_date: '2026-11-15', created_by: i2.user['demo.supervisor'] });
     expect((await one(d, `SELECT count_no FROM cycle_count WHERE id=$1`, [cc])).count_no).toBe('CC-0001');

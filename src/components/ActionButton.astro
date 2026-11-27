@@ -1,0 +1,33 @@
+---
+// Status-action button. When `unavailable`, it stays focusable (aria-disabled, never `disabled`) and the
+// reason is linked with aria-describedby. Without JS the submit still reaches the server, which answers
+// 403/409 with the same wording (ui-spec 4.8). src/scripts/unavailable.ts moves focus to the reason.
+import Icon from './Icon.astro';
+import type { Variant } from './types';
+interface Props {
+  label: string;
+  id: string;
+  variant?: Variant;
+  href?: string;            // renders a link-styled button instead of a submit button
+  type?: 'submit' | 'button';
+  name?: string;
+  value?: string;
+  formaction?: string;
+  unavailable?: boolean;
+  reason?: string;
+}
+const { label, id, variant = 'secondary', href, type = 'submit', name, value, formaction, unavailable = false, reason } = Astro.props;
+const reasonId = `why-${id}`;
+const cls = `btn btn--${variant}`;
+---
+{unavailable && reason ? (
+  <div class="action-unavailable">
+    <button class={cls} id={id} type={type} name={name} value={value} formaction={formaction}
+      aria-disabled="true" aria-describedby={reasonId} data-unavailable-reason={reasonId}>{label}</button>
+    <p class="action-unavailable__reason" id={reasonId}><Icon name="info" /> {reason}</p>
+  </div>
+) : href && !unavailable ? (
+  <a class={cls} id={id} href={href}>{label}</a>
+) : (
+  <button class={cls} id={id} type={type} name={name} value={value} formaction={formaction}>{label}</button>
+)}

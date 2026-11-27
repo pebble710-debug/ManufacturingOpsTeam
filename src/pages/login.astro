@@ -1,0 +1,115 @@
+---
+// S01 Login (ui-spec 2.6, S01). POST /login is handled here via loginWithPassword() (Diego, ADR-003).
+import AuthLayout from '../layouts/AuthLayout.astro';
+import Alert from '../components/Alert.astro';
+import ErrorSummary from '../components/ErrorSummary.astro';
+import FormField from '../components/FormField.astro';
+import CsrfField from '../components/CsrfField.astro';
+import { appLocals, safeNextPath } from '../components/locals';
+import { loginWithPassword } from '../components/auth-bridge';
+import type { FieldError } from '../components/types';
+
+export const prerender = false;
+
+const { user, csrfToken } = appLocals(Astro.locals);
+if (user) return Astro.redirect('/dashboard');
+
+const next = safeNextPath(Astro.url.searchParams.get('next'));
+const reason = Astro.url.searchParams.get('reason');
+let username = '';
+let failure: 'invalid' | 'limited' | 'starting' | 'unavailable' | null = null;
+const fieldErrors: FieldError[] = [];
+
+if (Astro.request.method === 'POST') {
+  const form = await Astro.request.formData();
+  username = String(form.get('username') ?? '').trim();
+  const password = String(form.get('password') ?? '');
+  const postNext = safeNextPath(String(form.get('next') ?? ''));
+
+  if (!username) fieldErrors.push({ fieldId: 'username', message: 'Enter your username.' });
+  if (!password) fieldErrors.push({ fieldId: 'password', message: 'Enter your password.' });
+
+  if (fieldErrors.length === 0) {
+    let clientKey = 'unknown';
+    try { clientKey = Astro.clientAddress; } catch { /* no client address in this runtime */ }
+    const result = await loginWithPassword({ username, password, clientKey });
+    if (result.ok) {
+      const target = postNext ?? '/dashboard';
+      const c = result.sessionCookie;
+      if (typeof c === 'string') {
+        return new Response(null, { status: 303, headers: { Location: target, 'Set-Cookie': c, 'Cache-Control': 'no-store' } });
+      }
+      Astro.cookies.set(c.name, c.value, c.options);
+      return Astro.redirect(target, 303);
+    }
+    // One generic message for wrong password, unknown user and deactivated user (US-001).
+    failure = result.status === 429 ? 'limited'
+      : result.status === 503 ? 'starting'
+      : result.status >= 500 ? 'unavailable'
+      : 'invalid';
+    Astro.response.status = result.status === 429 || result.status >= 500 ? result.status : 401;
+  } else {
+    Astro.response.status = 422;
+  }
+  Astro.response.headers.set('Cache-Control', 'no-store');
+}
+
+const errOf = (id: string) => fieldErrors.find((e) => e.fieldId === id)?.message;
+const accounts = [
+  ['demo.viewer', 'Viewer', 'Read-only guest: look at everything, change nothing'],
+  ['demo.shipper1', 'Shipping', 'Packing a shipment'],
+  ['demo.shipper2', 'Shipping', 'Verifying a shipment packed by shipper1'],
+  ['demo.quality', 'Quality', 'Verifying, holds, root cause'],
+  ['demo.supervisor', 'Supervisor', 'Approvals, cancel, verify'],
+  ['demo.receiver', 'Receiving', 'Receipts, transfers, counts'],
+  ['demo.admin', 'Admin', 'Settings, reporting date, audit, demo reset'],
+];
+---
+<AuthLayout title="Sign in" description="Sign in to the Cobalt Ridge Ops demonstration dashboard (fictional data).">
+  <section class="card" aria-labelledby="signin-title">
+    <h1 id="signin-title" class="card__title">Sign in</h1>
+
+    <div class="alert-list">
+      {!failure && reason === 'expired' && <Alert variant="info" lead="Note:">You were signed out because the session expired. Sign in again to continue.</Alert>}
+      {!failure && reason === 'reset' && <Alert variant="info" lead="Note:">The demo data was reset. Sign in again.</Alert>}
+      {!failure && reason === 'required' && <Alert variant="info" lead="Note:">Please sign in to continue.</Alert>}
+      {failure === 'invalid' && <Alert variant="error" lead="Problem:" focusOnLoad>Username or password is incorrect.</Alert>}
+      {failure === 'limited' && <Alert variant="error" lead="Problem:" focusOnLoad>Too many sign-in attempts. Wait 15 minutes and try again, or use another demo account.</Alert>}
+      {failure === 'starting' && <Alert variant="error" lead="Problem:" focusOnLoad>The system is starting up. Wait a few seconds and try again.</Alert>}
+      {failure === 'unavailable' && <Alert variant="error" lead="Problem:" focusOnLoad>Something went wrong on our side. Try again.</Alert>}
+    </div>
+
+    <form class="form stack" method="post" action="/login" novalidate>
+      {csrfToken && <CsrfField />}
+      {next && <input type="hidden" name="next" value={next} />}
+      <ErrorSummary errors={fieldErrors} />
+      <FormField id="username" label="Username" required value={username} autocomplete="username" error={errOf('username')} inputClass="input--code" />
+      <FormField id="password" label="Password" type="password" required autocomplete="current-password" error={errOf('password')} />
+      <div data-requires-js hidden>
+        <label class="check"><input type="checkbox" id="show-password" /><span>Show password</span></label>
+      </div>
+      <div class="action-row form-actions">
+        <button class="btn btn--primary btn--block" type="submit">Sign in</button>
+      </div>
+    </form>
+  </section>
+
+  <Alert variant="info" lead="Just looking around?">Sign in as <strong>demo.viewer</strong> (read-only guest).</Alert>
+
+  <details class="disclosure">
+    <summary>Demo accounts (fictional, demo-only)</summary>
+    <div class="table-wrap" tabindex="0" role="region" aria-label="Demo accounts (scrolls sideways on small screens)">
+      <table class="table table--compact">
+        <caption class="visually-hidden">Demo accounts</caption>
+        <thead><tr><th scope="col">Username</th><th scope="col">Role</th><th scope="col">Good for</th></tr></thead>
+        <tbody>
+          {accounts.map(([u, r, g]) => <tr><th scope="row" class="cell-id">{u}</th><td>{r}</td><td>{g}</td></tr>)}
+        </tbody>
+      </table>
+    </div>
+    <p class="text-small text-muted">Demo passwords: see the README (demo-only, never reuse them). <code>demo.admin</code>: sign-in is not published on this site.</p>
+  </details>
+
+  <p class="text-small text-muted">For security, sessions end after 30 minutes without activity.</p>
+  <script>import '../scripts/show-password.ts';</script>
+</AuthLayout>

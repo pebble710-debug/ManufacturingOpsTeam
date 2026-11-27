@@ -1,0 +1,46 @@
+---
+// Accessible sortable table wrapper. Caller renders <tr> rows in the default slot (first cell
+// `<th scope="row" class="cell-id">`). Sorting is by links (?sort=&dir=), so it works without JS.
+import Icon from './Icon.astro';
+import { withParams } from './query';
+export interface Column {
+  key: string;            // sort key sent in ?sort=
+  label: string;
+  sortable?: boolean;
+  numeric?: boolean;
+  priority?: 2 | 3;       // hide below 768 px (2) or 1024 px (3)
+}
+interface Props {
+  caption: string;
+  columns: Column[];
+  sort?: string;
+  dir?: 'asc' | 'desc';
+  compact?: boolean;
+}
+const { caption, columns, sort, dir = 'asc', compact = false } = Astro.props;
+const colClass = (c: Column) => [c.numeric ? 'numeric' : '', c.priority ? `col-p${c.priority}` : ''].filter(Boolean).join(' ') || undefined;
+---
+<div class="table-wrap" tabindex="0" role="region" aria-label={`${caption} (scrolls sideways on small screens)`}>
+  <table class:list={['table', { 'table--compact': compact }]}>
+    <caption class="visually-hidden">{caption}</caption>
+    <thead>
+      <tr>
+        {columns.map((c) => {
+          const active = sort === c.key;
+          const nextDir = active && dir === 'asc' ? 'desc' : 'asc';
+          return (
+            <th scope="col" class={colClass(c)} aria-sort={c.sortable && active ? (dir === 'asc' ? 'ascending' : 'descending') : undefined}>
+              {c.sortable ? (
+                <a class="sort-link" href={withParams(Astro.url, { sort: c.key, dir: nextDir, page: null })}>
+                  {c.label}
+                  {active && <><span class="sort-link__icon" aria-hidden="true">{dir === 'asc' ? '▲' : '▼'}</span><span class="visually-hidden">sorted {dir === 'asc' ? 'ascending' : 'descending'}</span></>}
+                </a>
+              ) : c.label}
+            </th>
+          );
+        })}
+      </tr>
+    </thead>
+    <tbody><slot /></tbody>
+  </table>
+</div>

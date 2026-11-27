@@ -1,0 +1,91 @@
+---
+// App shell (component-classes.md section 1). Middleware supplies Astro.locals (see components/locals.ts).
+import '../styles/app.css';
+import Icon from '../components/Icon.astro';
+import { appLocals, formatReportingDate } from '../components/locals';
+import { navFor } from '../components/nav-permissions';
+
+interface Props { title: string; description?: string; hideNav?: boolean }
+const { title, description, hideNav = false } = Astro.props;
+const { user, csrfToken, reportingDate, isLiveDate } = appLocals(Astro.locals);
+const wall = Astro.url.searchParams.get('view') === 'wall';
+const nav = user && !hideNav ? navFor(user.role) : [];
+const path = Astro.url.pathname;
+const isCurrent = (href: string) => path === href || (href !== '/dashboard' && path.startsWith(`${href}/`));
+const dateText = reportingDate
+  ? isLiveDate
+    ? `Live date: ${formatReportingDate(reportingDate)}`
+    : `Reporting as of ${formatReportingDate(reportingDate)} — demonstration data`
+  : '';
+const pageTitle = `${title} | Cobalt Ridge Ops (DEMO)`;
+---
+<!doctype html>
+<html lang="en" class:list={[{ 'view-wall': wall }]}>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex, nofollow" />
+    {description && <meta name="description" content={description} />}
+    <title>{pageTitle}</title>
+  </head>
+  <body class="app-shell">
+    <a class="skip-link" href="#main">Skip to main content</a>
+    <header>
+      <div class="demo-banner"><div class="demo-banner__inner">
+        <span class="demo-banner__label">DEMO – FICTIONAL DATA</span>
+        <span>Cobalt Ridge Components, Inc. is fictional. No real data.</span>
+      </div></div>
+      <div class="topbar"><div class="topbar__inner">
+        <div class="topbar__brand">
+          <a class="topbar__app" href={user ? '/dashboard' : '/login'}>Cobalt Ridge Ops</a>
+          <span class="topbar__plant">Riverton plant</span>
+        </div>
+        {dateText && <p class="reporting-chip"><Icon name="calendar" /> {dateText}</p>}
+        {user && (
+          <div class="user-menu">
+            <span class="user-menu__name">{user.displayName}</span>
+            <span class="role-badge"><span class="visually-hidden">Role: </span>{user.role}</span>
+            <form method="post" action="/logout">
+              <input type="hidden" name="_csrf" value={csrfToken} />
+              <button class="btn btn--secondary" type="submit">Sign out</button>
+            </form>
+          </div>
+        )}
+      </div></div>
+    </header>
+    <div class="app-body">
+      {nav.length > 0 && (
+        <div class="site-nav-bar">
+          <details class="nav-disclosure">
+            <summary>Menu</summary>
+            <nav class="site-nav" aria-label="Main">
+              <ul>
+                {nav.map((g) => g.children ? (
+                  <li>
+                    <p class="site-nav__group-title">{g.label}</p>
+                    <ul class="site-nav__sub">
+                      {g.children.map((c) => (
+                        <li><a class="site-nav__link" href={c.href} aria-current={isCurrent(c.href) ? 'page' : undefined}>{c.label}</a></li>
+                      ))}
+                    </ul>
+                  </li>
+                ) : (
+                  <li><a class="site-nav__link" href={g.href} aria-current={g.href && isCurrent(g.href) ? 'page' : undefined}>{g.label}</a></li>
+                ))}
+              </ul>
+            </nav>
+          </details>
+        </div>
+      )}
+      <main id="main" class="main" tabindex="-1">
+        <slot />
+      </main>
+    </div>
+    <footer class="site-footer"><div class="site-footer__inner">
+      <span>Educational prototype — all data fictional. Not a certified or production system.</span>
+      <a href="/resources">Resources</a>
+      <a href="https://github.com/pebble710-debug/ManufacturingOpsTeam" target="_blank" rel="noopener noreferrer">GitHub repository<span class="visually-hidden"> (opens external site)</span></a>
+    </div></footer>
+    <script>import '../scripts/app.ts';</script>
+  </body>
+</html>

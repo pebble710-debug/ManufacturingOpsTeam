@@ -1,0 +1,16 @@
+---
+// Error summary at the top of a form after a failed submit (422). Focus moves here (autofocus + external script).
+import type { FieldError } from './types';
+interface Props { errors: FieldError[]; id?: string }
+const { errors, id = 'error-summary' } = Astro.props;
+const n = errors.length;
+---
+{n > 0 && (
+  <div class="error-summary" role="group" aria-labelledby={`${id}-title`}>
+    <h2 class="error-summary__title" id={`${id}-title`} tabindex="-1" autofocus>There is a problem</h2>
+    <p class="error-summary__intro">Fix the {n} {n === 1 ? 'item' : 'items'} below, then submit again.</p>
+    <ul class="error-summary__list">
+      {errors.map((e) => <li><a href={`#${e.fieldId}`}>{e.message}</a></li>)}
+    </ul>
+  </div>
+)}

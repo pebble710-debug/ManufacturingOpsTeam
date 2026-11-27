@@ -1,0 +1,23 @@
+---
+// Page links (25 per page by default). Also renders the "Showing a-b of n" count.
+import { pageWindow, withParams } from './query';
+interface Props { page: number; total: number; pageSize?: number; noun?: string }
+const { page, total, pageSize = 25, noun = 'records' } = Astro.props;
+const totalPages = Math.max(1, Math.ceil(total / pageSize));
+const cur = Math.min(Math.max(1, page), totalPages);
+const from = total === 0 ? 0 : (cur - 1) * pageSize + 1;
+const to = Math.min(total, cur * pageSize);
+const href = (n: number) => withParams(Astro.url, { page: n === 1 ? null : n });
+---
+<p class="result-count" aria-live="polite">{total === 0 ? `No ${noun} found` : `Showing ${from}–${to} of ${total} ${noun}`}</p>
+{totalPages > 1 && (
+  <nav class="pagination" aria-label="Pagination">
+    <ul class="pagination__list">
+      <li>{cur > 1 ? <a class="pagination__link" href={href(cur - 1)} rel="prev">Previous</a> : <a class="pagination__link" aria-disabled="true">Previous</a>}</li>
+      {pageWindow(cur, totalPages).map((n) => n === null
+        ? <li><span class="pagination__gap" aria-hidden="true">…</span></li>
+        : <li><a class="pagination__link" href={href(n)} aria-current={n === cur ? 'page' : undefined} aria-label={`Page ${n}`}>{n}</a></li>)}
+      <li>{cur < totalPages ? <a class="pagination__link" href={href(cur + 1)} rel="next">Next</a> : <a class="pagination__link" aria-disabled="true">Next</a>}</li>
+    </ul>
+  </nav>
+)}

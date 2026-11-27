@@ -1,0 +1,6 @@
+---
+// Hidden synchronizer token for every POST form (Astro.locals.csrfToken).
+import { appLocals } from './locals';
+const { csrfToken } = appLocals(Astro.locals);
+---
+<input type="hidden" name="_csrf" value={csrfToken} />

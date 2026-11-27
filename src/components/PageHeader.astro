@@ -1,0 +1,25 @@
+---
+// Breadcrumb + h1 + optional meta + actions slot. `operational` adds the read-only role note (ui-spec 2.4)
+// for Viewer and Admin on screens that normally carry actions.
+import Breadcrumb from './Breadcrumb.astro';
+import { appLocals } from './locals';
+import type { Crumb } from './types';
+interface Props { title: string; crumbs?: Crumb[]; operational?: boolean }
+const { title, crumbs = [], operational = false } = Astro.props;
+const { user } = appLocals(Astro.locals);
+const note =
+  operational && user?.role === 'Viewer'
+    ? "You are signed in as Viewer, a read-only guest. You can look at everything but can't change anything."
+    : operational && user?.role === 'Admin'
+      ? "You are signed in as Admin. Admins manage settings and users and can't pack, verify, ship, count or post stock (separation of duties)."
+      : null;
+---
+<div class="page-header">
+  <Breadcrumb items={crumbs} />
+  <div class="page-header__row">
+    <h1 class="page-header__title">{title}</h1>
+    {Astro.slots.has('actions') && <div class="page-header__actions"><slot name="actions" /></div>}
+  </div>
+  {Astro.slots.has('meta') && <p class="page-header__meta"><slot name="meta" /></p>}
+  {note && <p class="page-header__meta text-muted" data-role-note>{note}</p>}
+</div>

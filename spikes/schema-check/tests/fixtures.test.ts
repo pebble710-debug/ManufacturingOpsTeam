@@ -16,7 +16,8 @@ const pick = (qs: string[], re: RegExp) => {
 };
 const Q = {
   delivery: pick(kpiQueries, /percentile_cont\(0\.5\)/),
-  quality: pick(kpiQueries, /denominator_kpi3/),
+  kpi3: pick(kpiQueries, /denominator_kpi3/),
+  kpi4: pick(kpiQueries, /first_pass_no_error/),
   rework: pick(kpiQueries, /FROM rework_event/),
   accuracy: pick(kpiQueries, /accuracy_first_count_pct/),
   onHand: pick(traceQueries, /FROM v_on_hand_detail/),
@@ -30,7 +31,7 @@ const num = (v: unknown) => (v === null || v === undefined ? null : Number(v));
 
 describe('doc query extraction', () => {
   it('SCH-A00 all oracle queries were found in schema.md sections 5 and 8', () => {
-    expect(Object.keys(Q).length).toBe(10);
+    expect(Object.keys(Q).length).toBe(11);
   });
 });
 
@@ -127,7 +128,7 @@ describe('Fixture B: packaging KPIs (KPI-3, KPI-4, KPI-5), period 2026-11-01..20
         shipment_id: sid, attempt_no: attempt, result, packer_id: ids.user['demo.shipper1'], verified_by: ids.user['demo.shipper2'],
         checklist: checklist(failed), failed_items: `{${failed.join(',')}}`, verified_at: at, business_date: at.slice(0, 10) });
     const error = (sid: number, o: Record<string, unknown>) => insertRow(db, 'packaging_error', {
-      shipment_id: sid, detected_by_role: 'Verifier', detected_stage: 'Before ship', severity: 'Minor', description: 'Demo error', reported_by: ids.user['demo.quality'], ...o });
+      shipment_id: sid, detected_by_role: 'Verifier', detected_stage: 'Before ship', severity: 'Low', description: 'Demo error', reported_by: ids.user['demo.quality'], ...o });
     const rework = (pe: number, sid: number, startedAt: string, minutes: number) => {
       const done = new Date(new Date(startedAt).getTime() + minutes * 60_000).toISOString();
       return insertRow(db, 'rework_event', { packaging_error_id: pe, shipment_id: sid, action: 'Relabel', started_at: startedAt, completed_at: done, performed_by: ids.user['demo.shipper1'] });
@@ -158,8 +159,9 @@ describe('Fixture B: packaging KPIs (KPI-3, KPI-4, KPI-5), period 2026-11-01..20
   });
   const P = ['2026-11-01', '2026-11-30'];
 
-  it('SCH-B01 KPI-3: verified-or-shipped 5, with error 3 -> 60.0 %; errors 3 -> 60.0 per 100; internal 2, escapes 1', async () => {
-    const r = await one(db, Q.quality, P);
+  it('SCH-B01 KPI-3 (UD-8 ship-date basis): shipped 5, with error 3 -> 60.0 %; errors 3 -> 60.0 per 100; internal 2, escapes 1, excluded 0', async () => {
+    const r = await one(db, Q.kpi3, P);
+    expect(num(r.excluded_errors)).toBe(0);
     expect(num(r.denominator_kpi3)).toBe(5);
     expect(num(r.shipments_with_error)).toBe(3);
     expect(num(r.errors)).toBe(3);
@@ -169,7 +171,7 @@ describe('Fixture B: packaging KPIs (KPI-3, KPI-4, KPI-5), period 2026-11-01..20
     expect((100 * num(r.errors)!) / num(r.denominator_kpi3)!).toBeCloseTo(60.0, 5);
   });
   it('SCH-B02 KPI-4 FPY: first pass with no error = SH-2001, SH-2002 -> 2 / 5 = 40.0 % (SH-2004 later has a customer error)', async () => {
-    const r = await one(db, Q.quality, P);
+    const r = await one(db, Q.kpi4, P);
     expect(num(r.verified)).toBe(5);
     expect(num(r.first_pass_no_error)).toBe(2);
     expect((100 * num(r.first_pass_no_error)!) / num(r.verified)!).toBeCloseTo(40.0, 5);
@@ -187,18 +189,56 @@ describe('Fixture B: packaging KPIs (KPI-3, KPI-4, KPI-5), period 2026-11-01..20
     expect((100 * num(r.rework_events)!) / shipped).toBeCloseTo(60.0, 5);
   });
   it('SCH-B04 empty period gives NULL denominators, not 0 / 100 (KPI-3/4/5)', async () => {
-    const q = await one(db, Q.quality, ['2026-01-01', '2026-01-31']);
+    const q = await one(db, Q.kpi3, ['2026-01-01', '2026-01-31']);
     expect(num(q.denominator_kpi3)).toBe(0);
-    expect(num(q.verified)).toBe(0);
+    expect(num((await one(db, Q.kpi4, ['2026-01-01', '2026-01-31'])).verified)).toBe(0);
     const w = await one(db, Q.rework, ['2026-01-01', '2026-01-31']);
     expect(num(w.rework_events)).toBe(0);
     expect(num(w.total_minutes)).toBeNull();
     expect(num(w.avg_minutes)).toBeNull();
   });
   it('SCH-B05 period anchors: KPI-4 uses the FIRST verification business date (SH-2006 failed 11-12, passed 11-13)', async () => {
-    const r = await one(db, Q.quality, ['2026-11-13', '2026-11-13']); // only the second attempt of SH-2006 falls here; ship_date anchor adds it to KPI-3 only
-    expect(num(r.verified)).toBe(0);
-    expect(num(r.denominator_kpi3)).toBe(1);
+    const p13 = ['2026-11-13', '2026-11-13']; // only the second attempt of SH-2006 falls here; its ship date puts it in KPI-3
+    expect(num((await one(db, Q.kpi4, p13)).verified)).toBe(0);
+    expect(num((await one(db, Q.kpi3, p13)).denominator_kpi3)).toBe(1);
+  });
+  it('SCH-B06 UD-9 flag: SH-2004 customer error marked packaging_related=false -> KPI-3 40.0 %, escapes 0, excluded 1; FPY 3/5 = 60.0 % (kpi-spec 13.2)', async () => {
+    await db.query(`UPDATE packaging_error SET packaging_related=false WHERE detected_stage='After ship'`);
+    try {
+      const r = await one(db, Q.kpi3, P);
+      expect([num(r.denominator_kpi3), num(r.shipments_with_error), num(r.errors), num(r.customer_escapes), num(r.excluded_errors)]).toEqual([5, 2, 2, 0, 1]);
+      expect(num((await one(db, Q.kpi4, P)).first_pass_no_error)).toBe(3);
+      const v = await one(db, `SELECT SUM(error_count)::int AS e, SUM(escape_error_count)::int AS x FROM v_shipment_quality WHERE ship_date BETWEEN $1 AND $2`, P);
+      expect([v.e, v.x]).toEqual([2, 0]); // view agrees with the oracle (kpi-spec S-2)
+    } finally {
+      await db.query(`UPDATE packaging_error SET packaging_related=true WHERE detected_stage='After ship'`);
+    }
+  });
+  it('SCH-B07 view v_shipment_quality gives the same error counts as the KPI-3 oracle (kpi-spec S-2)', async () => {
+    const v = await one(db, `SELECT COUNT(*) FILTER (WHERE error_count > 0)::int AS w, SUM(error_count)::int AS e, SUM(internal_error_count)::int AS i, SUM(escape_error_count)::int AS x
+      FROM v_shipment_quality WHERE status='Shipped' AND ship_date BETWEEN $1 AND $2`, P);
+    const r = await one(db, Q.kpi3, P);
+    expect([v.w, v.e, v.i, v.x]).toEqual([num(r.shipments_with_error), num(r.errors), num(r.internal_catches), num(r.customer_escapes)]);
+  });
+  it('SCH-B08 UD-8 two period dates: SH-2007 first-verified 11-30, shipped 12-01 -> KPI-3 Nov unchanged (5, 60.0 %), KPI-4 Nov 3/6 = 50.0 %, KPI-3 12-01 = 0/1', async () => {
+    const ids: Ids = await loadBase(db).catch(() => null as any) ?? null as any; // base already loaded: look ids up instead
+    void ids;
+    const u = async (n: string) => Number((await one(db, `SELECT id FROM app_user WHERE username=$1`, [n])).id);
+    const cust = Number((await one(db, `SELECT id FROM customer WHERE code='ALDERVALE'`)).id);
+    const car = Number((await one(db, `SELECT id FROM carrier WHERE name='SwiftLane Parcel'`)).id);
+    const sid = await insertRow(db, 'shipment', { shipment_no: 'SH-2007', customer_id: cust, customer_po: 'PO-TEST', order_date: '2026-10-28',
+      requested_date: '2026-12-01', promise_date: '2026-12-01', status: 'Shipped', ship_date: '2026-12-01', shipped_at: '2026-12-01T12:00:00Z',
+      carrier_id: car, packages_count: 1, total_weight_lb: 5, packed_by: await u('demo.shipper1'), verified_by: await u('demo.shipper2'),
+      verified_at: '2026-11-30T15:00:00Z', created_by: await u('demo.supervisor') });
+    await insertRow(db, 'shipment_verification', { shipment_id: sid, attempt_no: 1, result: 'Pass', packer_id: await u('demo.shipper1'), verified_by: await u('demo.shipper2'),
+      checklist: JSON.stringify({ part_number: 'pass', revision: 'pass', quantity: 'pass', lot: 'pass', labels: 'pass', packing_slip: 'pass', packaging_method: 'pass' }),
+      failed_items: '{}', verified_at: '2026-11-30T15:00:00Z', business_date: '2026-11-30' });
+    const k3 = await one(db, Q.kpi3, P);
+    expect([num(k3.denominator_kpi3), num(k3.shipments_with_error)]).toEqual([5, 3]);
+    const k4 = await one(db, Q.kpi4, P);
+    expect([num(k4.verified), num(k4.first_pass_no_error)]).toEqual([6, 3]);
+    const dec = await one(db, Q.kpi3, ['2026-12-01', '2026-12-01']);
+    expect([num(dec.denominator_kpi3), num(dec.shipments_with_error)]).toEqual([1, 0]); // 0.0 %, not null
   });
 });
 

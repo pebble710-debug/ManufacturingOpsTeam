@@ -73,6 +73,8 @@ describe('0001 DDL (extracted from migrations-plan.md section 3)', () => {
     expect(names).toContain('cycle_count_approval_guard');
     expect(names).toContain('shipment_status_history_chain');
     expect(names).toContain('shipment_line_delete_guard');
+    expect(names).toContain('shipment_lock_guard'); // UD-3 (T-022)
+    expect(names).toContain('shipment_line_lock_guard'); // UD-3 (T-022)
     // Deferred (checked at COMMIT)
     const d = await rows(db, `SELECT tgname, tgdeferrable, tginitdeferred FROM pg_trigger WHERE tgname IN ('inventory_transaction_nonnegative','inventory_transaction_transfer_balanced')`);
     expect(d.every((r) => r.tgdeferrable && r.tginitdeferred)).toBe(true);
@@ -86,10 +88,20 @@ describe('0001 DDL (extracted from migrations-plan.md section 3)', () => {
     expect((await one(db, `SELECT count(*)::int AS n FROM login_attempt`)).n).toBe(0);
   });
 
+  it('SCH-08 T-022 named constraints exist: approver <> submitter (UD-2), packaging_related (UD-9); severity is the UD-5 list', async () => {
+    const c = await rows(db, `SELECT conname FROM pg_constraint WHERE conname IN ('cycle_count_approver_not_submitter_chk','packaging_error_related_chk')`);
+    expect(c.length).toBe(2);
+    const sev = await one(db, `SELECT pg_get_constraintdef(oid) AS d FROM pg_constraint WHERE conname='packaging_error_severity_check'`);
+    for (const v of ['Low', 'Medium', 'High', 'Critical']) expect(sev.d).toContain(`'${v}'`);
+    expect(sev.d).not.toMatch(/Minor|Major/);
+    const t = await one(db, `SELECT data_type FROM information_schema.columns WHERE table_name='v_shipment_delivery' AND column_name='cycle_hours'`);
+    expect(t.data_type).toBe('double precision'); // kpi-spec S-2, unrounded
+  });
+
   it('SCH-07 enumerations are text + CHECK (no CREATE TYPE) so widening is a constraint swap (migrations-plan 1/5)', async () => {
     expect((await one(db, `SELECT count(*)::int AS n FROM pg_type WHERE typtype='e'`)).n).toBe(0);
     const c = await rows(db, `SELECT conname FROM pg_constraint WHERE conname IN ('shipment_status_check','shipment_shipped_fields_chk','shipment_late_reason_chk','inventory_transaction_adjust_chk')`);
-    expect(c.length).toBe(4); // names the planned migrations 0002..0005 DROP CONSTRAINT by
+    expect(c.length).toBe(4); // named constraints later migrations DROP by name (0002 Delivered withdrawn, UD-6)
     await expectDbError(db.exec(`SELECT 1`).then(() => db.exec(`INSERT INTO carrier (name, mode) VALUES ('Rail Fantasy','Rail')`)), /violates check constraint/, '23514');
   });
 });

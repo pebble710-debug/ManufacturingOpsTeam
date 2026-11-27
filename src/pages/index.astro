@@ -1,0 +1,6 @@
+---
+import { appLocals } from '../components/locals';
+export const prerender = false;
+const { user } = appLocals(Astro.locals);
+return Astro.redirect(user ? '/dashboard' : '/login');
+---
