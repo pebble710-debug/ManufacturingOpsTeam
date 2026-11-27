@@ -107,7 +107,9 @@ Y = item shown. A menu item is shown when the role can open at least the read vi
 | Action button | Shown to | Shown but unavailable (with reason) to |
 |---------------|----------|----------------------------------------|
 | New shipment, Edit shipment | Shipping, Supervisor | none (hidden for others) |
-| Mark Ready to Pack, Start Packing | Shipping, Supervisor | none |
+| Mark Ready to Pack, Start Packing (also the re-pack after a reopen) | Shipping, Supervisor | none |
+| Reopen after rework ("Reopen for re-packing") *(UD-4, P-26)* | Quality, Supervisor | Shipping (sees hint "Quality or a Supervisor reopens the shipment after rework", R-15) |
+| Correct a Shipped or Cancelled shipment *(UD-3, P-28)* | Supervisor | everyone else (no button; Shipped/Cancelled pages are read-only, R-14) |
 | Mark Verified / Fail verification | Shipping, Quality, Supervisor | **the current packer** (identity rule R-1, including a Supervisor or Quality user who packed) |
 | Ship | Shipping, Supervisor | same roles when status is not Verified (state) |
 | Put On Hold | Shipping, Quality, Supervisor | none |
@@ -115,14 +117,14 @@ Y = item shown. A menu item is shown when the role can open at least the read vi
 | Cancel shipment | Supervisor (any status before Shipped); Shipping only while Planned or Ready to Pack | Shipping in later statuses **including On Hold** (sees hint, R-5; server answers 403, not 409) |
 | Log packaging error | Shipping (before ship only), Quality, Supervisor | Shipping on a Shipped shipment (sees hint, R-8) |
 | Log rework | Shipping, Quality, Supervisor | none |
-| Root cause, corrective action, close error | Quality, Supervisor | none |
+| Root cause, corrective action, close error, **Mark Contained** *(UD-4, P-27)* | Quality, Supervisor | none |
 | Receive material | Receiving, Supervisor | none |
 | Transfer, scrap, production complete (stock not in a Hold location) | Receiving, Supervisor | none |
 | Transfer or scrap into or out of a Hold location | Quality, Supervisor | Receiving (sees hint, R-7; decided by the source location type) |
 | Production complete | Receiving, Supervisor | none (not offered to Quality) |
 | Create count list | Supervisor | none |
 | Enter counts | Receiving, Supervisor | none |
-| Approve count | Supervisor | **a Supervisor who entered or recounted any line of that count** (R-4, `APPROVER_SAME_AS_COUNTER`) |
+| Approve count | Supervisor | **a Supervisor who entered or recounted any line of that count, or submitted it** (R-4 widened by UD-2; `APPROVER_SAME_AS_COUNTER`, `APPROVER_SAME_AS_SUBMITTER`) |
 | Targets, lookups | Admin, Supervisor | none |
 | Reporting date, demo reset | Admin | Supervisor sees the reporting date as read-only text; no reset section |
 | Audit log, users (screen later) | Admin | none (hidden) |
@@ -515,11 +517,12 @@ Shown on shipment detail when status is Rework (and again on Pack & Verify) so t
 Before SH-1042 can ship again
  [x] 1. Packaging error logged          PE-0107 (Paperwork, High)
  [x] 2. Rework completed                Reprint paperwork, 22 min
- [ ] 3. Packed again                    [ Start packing again ] (a new packer is recorded)
- [ ] 4. Verified again by a different person
+ [ ] 3. Reopened for re-packing         [ Reopen for re-packing ] (Quality, Supervisor; UD-4)
+ [ ] 4. Packed again                    [ Start packing (you become the packer) ] (Shipping, Supervisor)
+ [ ] 5. Verified again by a different person
 ```
 
-Per the API contract (E-16, `REWORK_GATE_NOT_MET`) steps 1 and 2 gate **Start packing again** itself, not only the re-verification: until both are done, that button is shown **unavailable** with the missing step named (pattern 4.8; messages `E-GATE-1`, `E-GATE-2`). Steps 3 and 4 follow in order.
+Per the API contract (E-16, `REWORK_GATE_NOT_MET`) steps 1 and 2 gate **Reopen** itself, not only the re-verification: until both are done, that button is shown **unavailable** with the missing step named (pattern 4.8; messages `E-GATE-1`, `E-GATE-2`). *(UD-4)* Reopen (step 3) is Quality/Supervisor only and clears the packer; the user who then presses **Start packing** (step 4, contract E-10 re-pack) becomes the current packer. Steps 3 to 5 follow in order. "Start packing again" in the messages below means step 3 or 4.
 
 Each line has text status ("Done" / "Not done") in addition to the box glyph, which is `aria-hidden`; the list is an ordered list `<ol>`.
 
@@ -533,7 +536,7 @@ Each line has text status ("Done" / "Not done") in addition to the box glyph, wh
 Planned --Mark Ready to Pack--> Ready to Pack --Start Packing (user A = packer)--> Packing
 Packing --Verify by user B, all Pass--> Verified --Ship SH-xxxx--> Shipped
 Packing --Verify by user B, any Fail--> Rework  (or: error logged before ship -> Rework)
-Rework: log error (S10) -> log rework + complete (S12) -> Start Packing again (user C = new packer)
+Rework: log error (S10) -> log rework + complete (S12) -> Reopen (Quality/Supervisor, UD-4) -> Start Packing (user C = new packer)
         -> verify by someone who is not C (earlier packer A may verify) -> Verified -> Ship
 Any status before Shipped: On Hold (reason) -> Release (Quality/Supervisor) -> back to prior status
 Before Shipped: Cancelled (Supervisor; Shipping only Planned/Ready to Pack)
@@ -806,10 +809,16 @@ Status action matrix (what the Next step box offers)
 | Ready to Pack | `Start packing (you become the packer)` (Shipping, Supervisor) | Edit; Hold; Cancel |
 | Packing | `Open Pack & Verify` (everyone sees it; verify availability is on S06) | Edit; Log packaging error; Hold; Cancel (Supervisor only) |
 | Verified | `Ship SH-1042` (Shipping, Supervisor) | Edit (warns); Hold; Cancel (Supervisor) |
-| Rework | next unmet step from the gate checklist: `Log packaging error`, `Log rework`, or `Start packing again` (Shipping, Supervisor; unavailable with reason until error and rework are done) | Hold; Cancel (Supervisor) |
+| Rework | next unmet step from the gate checklist: `Log packaging error`, `Log rework`, or `Reopen for re-packing` (*UD-4*: Quality, Supervisor; unavailable with reason until error and rework are done). After the reopen the status is Packing with no packer and the primary action is `Start packing (you become the packer)` (Shipping, Supervisor) | Hold; Cancel (Supervisor) |
 | On Hold | `Release from hold` (Quality, Supervisor) | Cancel (Supervisor); shows hold reason and owning department |
-| Shipped | none | `Log customer-found error` (Quality, Supervisor) |
-| Cancelled | none | read-only, shows cancel note |
+| Shipped | none | `Log customer-found error` (Quality, Supervisor); `Correct details` (Supervisor, *UD-3*, opens S05a) |
+| Cancelled | none | read-only, shows cancel note; `Correct details` (Supervisor, *UD-3*) |
+
+Shipped and Cancelled shipments are locked (*UD-3*, R-14): no Edit button for any role; a direct edit returns 409 `SHIPMENT_LOCKED`. When corrections exist, S05 shows a **Corrections** table after the status history (time UTC, Supervisor, reason, "field: old → new" as text; contract ShipmentDetail `corrections[]`).
+
+#### S05a Correct shipment details *(UD-3, US-086)*
+**Route** `/shipments/{no}/correct` (POST form → contract E-53) · **Roles** Supervisor · same page template as S08.
+The form shows the current values of the correctable fields only: customer PO, requested date, promise date, and for Shipped only ship date, carrier, tracking number, service level, packages, weight, late reason and the short-shipment note per line; document flags and notes. **Reason (required, at least 10 characters)**. A Note above the form: "A correction changes only these details. Status, status history, the inventory ledger and verification records are not changed. Inventory is corrected through a cycle count." Errors use the 7.1 patterns; `CORRECTION_FIELD_NOT_ALLOWED` is shown as the note text, and a late reason is required when the corrected ship date is after the promise date (UD-1). PRG back to S05 with the flash message: Correction saved.
 
 Status changes are POST buttons inside `<form>`s with CSRF token; **Start packing**, **Mark Ready to Pack** and **Release** are one-click forms (no confirmation page) because they are reversible through history; **Cancel** goes to a confirm page (S08).
 
@@ -1234,7 +1243,8 @@ Adjust reason (required when any line has a variance)  [Select adjust reason v] 
 Note (optional)  [ ............ ]
 [ Approve count CC-0012 and post 1 adjustment ]    Back to list                                  (2)
 Unavailable (if you entered or recounted any line, R-4): "You entered this count, so another Supervisor must approve it." (3)
-   The Approve button stays visible but unavailable (pattern 4.8); server answer 403 APPROVER_SAME_AS_COUNTER.
+Unavailable (if you submitted the count, UD-2): "You submitted this count, so another Supervisor must approve it." (3)
+   The Approve button stays visible but unavailable (pattern 4.8); server answer 403 APPROVER_SAME_AS_COUNTER or APPROVER_SAME_AS_SUBMITTER.
 ```
 
 Annotations
@@ -1719,14 +1729,14 @@ Status as of 2026-11-26. **ANSWERED** = settled by the final permissions matrix,
 | 14.12 | C1 axis start at 50 % or 0 % | **OPEN** | Kenji |
 | 14.13 | Severity definitions wording | **OPEN** | Priya, Quinn |
 | 14.14 | Packaging-instruction reference plus revision source fields | **ANSWERED** (schema §4.2, contract §5 Line) | `part.packaging_instruction_ref` and `part.revision` |
-| 14.15 | Packer = current packer for all roles | **ANSWERED** (matrix R-1, T-4, T-5; contract E-16) | Yes; reopen sets the caller as the new packer |
+| 14.15 | Packer = current packer for all roles | **ANSWERED** (matrix R-1, T-4, T-5; contract E-10, E-16) | Yes. *(UD-4)* Reopen (Quality/Supervisor) clears the packer; the user who re-packs (Start packing) becomes the current packer |
 | 14.16 | Ship-date rule | **ANSWERED** (contract E-12, §14.3) | No ship date after the business date, and none before the order date (both 422). Late reason required when ship date is after the promise date (T-016 D-2) |
 | 14.17 | Chart click-through with tile click-through deferred | **OPEN** | Priya, Kenji (design gives keyboard links under each chart) |
 | 14.18 | Query-string names, filter state on redirects | **ANSWERED** (contract §1.5, §14.3 14.18) | `page`, `page_size`, `sort`, named filters; unknown parameters are 422. Filter state across PRG redirects is a UI matter (Felix) |
 | 14.19 | Page forms: urlencoded POST vs `fetch` JSON | **ANSWERED** (T-016 D-8; contract §1.12) | Pages use plain `application/x-www-form-urlencoded` POST forms with a hidden `_csrf` field and PRG. `/api/v1/*` stays JSON-only. Both run the same service functions. `add_line` / `remove_line` / `intent` are reserved button names |
-| 14.20 | Supervisor editing notes on a Shipped or Cancelled shipment (contract Q-G): the UI has no such control yet; if kept, S05 gets a notes form for Supervisor only | **OPEN** | Priya |
+| 14.20 | Supervisor editing notes on a Shipped or Cancelled shipment (contract Q-G) | **ANSWERED** (UD-3, contract E-53) | No direct edits; Supervisor uses Correct details (S05a) with a reason |
 | 14.21 | Optional "session ends in 2 minutes, stay signed in" prompt (WCAG 2.2.1 mitigation, 2.6) | **OPEN** | Sasha, Quinn |
-| 14.22 | Error code name for R-4 | **ANSWERED** (contract §1.4) | `APPROVER_SAME_AS_COUNTER` |
+| 14.22 | Error code name for R-4 | **ANSWERED** (contract §1.4) | `APPROVER_SAME_AS_COUNTER`; `APPROVER_SAME_AS_SUBMITTER` for the submitter (UD-2) |
 | 14.23 | Reset keeps or truncates the audit log | **ANSWERED** (T-016 D-5) | Truncated; one `DEMO_RESET` entry is re-inserted. S23 copy updated |
 | 14.24 | Exact 429 copy and whether to show `Retry-After` for sign-in (design: fixed "15 minutes" text, no clock) | **OPEN** | Sasha, Diego |
 
