@@ -1,12 +1,12 @@
 // The seven fictional demo users (permissions-matrix section 4) and their DEMO-ONLY passwords.
 // One source for the seed, the README and the login page (ADR-003 D-13). Never reuse these anywhere real.
 // Fictional data only: example.com addresses, obviously fake names.
-import type { Role } from '../auth/permissions';
+import type { Role } from '../auth/permissions.ts';
 
 export interface DemoUser {
   username: string;
   displayName: string;
-  role: 'Admin' | 'Supervisor' | 'Shipping' | 'Receiving' | 'Quality' | 'Viewer';
+  role: Role;
   /** Published demo-only password; null for demo.admin (see adminPasswordFor). */
   password: string | null;
 }
@@ -25,8 +25,6 @@ export const DEMO_USERS: readonly DemoUser[] = [
 export const LOCAL_ADMIN_PASSWORD = 'Demo-Admin-Local-2026';
 
 export const MIN_ADMIN_PASSWORD_LENGTH = 16;
-
-export type _RoleCheck = DemoUser['role'] extends Role ? true : never;
 
 /** ADR-003 D-13 (Sasha DR-01): the credential mode follows the target DB, not appEnv(). */
 export function seedCredentialMode(opts: { remote: boolean }): 'local' | 'deployed' {

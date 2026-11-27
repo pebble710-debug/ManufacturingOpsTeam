@@ -261,6 +261,37 @@ Result: the first dashboard load is non-empty (acceptance criterion 11), most ti
 
 The generator's summary output (`seed-summary.json`, printed by `db:reset-seed`) lists the counts of section 5, the KPI values above, the pinned shipment numbers of S-2, the lot numbers, and the checksum; Quinn copies them into the acceptance matrix.
 
+### 10.1 Pinned values (T-029, generator `src/lib/seed/`, `SEED = 20261125`)
+
+Status: **implemented and pinned** (2026-11-27). Computed with the schema.md section 8 oracle queries (`tests/integration/db/kpi-oracle.ts`), tolerance 0, basis promise. The Vitest integration test `tests/integration/db/seed.test.ts` fails if any value or the checksum changes; a deliberate generator change must update this table in the same commit. Default window 2026-10-27 .. 2026-11-25, previous period 2026-09-27 .. 2026-10-26.
+
+| KPI | Default window | Previous period | Six months (05-26 .. 11-25) | Band in the table above |
+|-----|---------------:|----------------:|---------------:|-------------------------|
+| Shipped (denominator) | 76 | 38 | 274 | 74-80 / 42-48 (previous is 4 below the band: 22 working days at the 1.8/day base rate) |
+| KPI-1 on-time % | 84.2 | 86.8 | 89.8 | 80-88 ok / 90-96 (2.2 below; still worse in the peak) |
+| KPI-2 OTIF % | 81.6 | 86.8 | 88.3 | 77-86 ok / 88-95 (1.2 below) |
+| KPI-3 error rate % (shipments with a countable error / shipped) | 11.8 (9 of 76) | 5.3 (2 of 38) | 6.6 (18 of 274) | 10-16 ok / 4-8 ok |
+| KPI-3 errors per 100 shipments | 11.8 | 5.3 | 6.9 (19 errors) | |
+| internal catches / customer escapes | 8 / 1 | 2 / 0 | 16 / 3 | |
+| KPI-4 FPY % (first verification; 69 of 80 / 36 of 38 / 258 of 278) | 86.3 | 94.7 | 92.8 | 80-88 ok / 90-95 ok |
+| KPI-5 rework frequency % (events / shipped) | 13.2 (10 events) | 7.9 (3 events) | 6.9 (19 events) | 8-14 ok / 3-7 (0.9 above) |
+| KPI-5 rework minutes: total / average | 439 / 43.9 | 91 / 30.33 | 817 / 43.0 | |
+| KPI-6 median cycle time h | 27.58 | 19.48 | 22.28 | 26-34 ok / 18-24 ok |
+| KPI-6 P90 cycle time h | 84.39 | 68.03 | 69.21 | |
+| KPI-7 inventory accuracy, first count % | 88.2 (15 of 17 lines, CC-0010) | 100.0 (34 lines, CC-0008 and CC-0009) | 95.2 (168 lines) | 88.2 exact ok / 90-100 ok |
+| KPI-7 after recount % | 94.1 | 100.0 | 97.0 | |
+| KPI-7 absolute variance units | 7 | 49 | 167 | |
+
+Result: the first dashboard load is non-empty, KPI-1/2/3/4/5/6 are worse than the previous period, KPI-7 is non-null in both periods, and every default-window tile is below target. Three previous-period values sit slightly outside the design bands (on-time 86.8, OTIF 86.8, rework 7.9 %, shipped 38); they were accepted because the peak story holds. Calibration is not tuned further (change constants in `generate.ts` and re-pin if Priya wants other bands, SQ-5).
+
+**Actual row counts** (the section 5 targets in brackets): shipments 300 [300] (Shipped 274, Cancelled 6, open 20 as designed), shipment lines 591 [540-600], status history 1,469 [1,400-1,600], verification attempts 287 [285-295], packaging errors 21 [21], rework events 20 [20], corrective actions 14 [14], receipts 150 [150: 140 Accepted, 8 On Hold, 2 Rejected], lots 162 [150-165], ledger rows 745 [720-800], cycle counts 12 [12], **cycle-count lines 198 [200]** (early counts had too few A-class lots in stock for the quota, so CC-0002 and CC-0003 have one A line less), users 7, customers 6, suppliers 4, carriers 4, locations 10, parts 26, reason codes 16. Late shipments 28 of 274 (10.2 %), peak 70 versus other 204 shipped, counts by category, severity, stage and status exactly as in section 5. Count accuracy over all approved counts: first count 95.2 % (168 lines), after recount 97.0 %.
+
+**Determinism:** checksum `2f9e05673e717b456f92bf7d947115a3` (section 13 recipe; identical on in-memory Postgres in tests and on the local emulator). Seed time: about 1.5 s with test scrypt parameters, **about 8.3 s locally with production scrypt (2^17, 7 users, sequential)** including generation, insert, validation and checksum. Netlify timing is still SQ-2.
+
+**Pinned demo records:** SH-1042 (S-1), the customer-found error shipment SH-1232 (S-2, Brightwater, PE open, corrective action In Progress due 2026-11-20), story lot L2640-001 (shipments SH-1192, SH-1196, SH-1223, SH-1234), held lot L2646-001, CC-0010/0011/0012, open shipments SH-1281..SH-1300 exactly as in section 7.
+
+**Implementation deviations from this plan (all deliberate, all tested):** (1) ids are the insertion order (no `OVERRIDING SYSTEM VALUE`, which the postgres.js helper cannot express); the number sequences are set with `setval`. (2) Lines of a shipment whose quantity no single lot can cover are split across lots (extra lines, as designed). (3) CRC-2041-B (inactive) has no shipments or stock. (4) Verifier-detected errors: 9 on shipped shipments plus SH-1284 (the plan text said 10 plus SH-1284). (5) The 42nd shipment by order date is forced to be SH-1042 by swapping shipment numbers, so numbering by order date is monotone except for that one pair. (6) The `reporting_date` default equals `SEED_ANCHOR_DATE` (test `migrations.test.ts`).
+
 ## 11. Small hand-checkable fixtures (unit and integration tests)
 
 These are separate from the big seed (tests never depend on it). They are TypeScript objects (`tests/fixtures/delivery.ts`, `packaging.ts`, `inventory.ts`) loaded into a fresh `@netlify/database-dev` after `applyMigrations()`. Each fixture was loaded into PGlite with the 0001 DDL and the section-8 queries of schema.md and **all expected values below were reproduced** (44 assertions passed). Fixed demo users and lookups: the 7 demo users, customers Aldervale Aerostructures and Pinecrest Robotics, supplier Graystone Metals Supply, carriers SwiftLane Parcel and Customer Pickup, parts `CRC-2041-B` (A), `CRC-3310-A` (B), `CRC-4102-A` (C), `CRC-5005-A` (A), locations `STK-A01`, `HOLD-01`, `FG-01`.
