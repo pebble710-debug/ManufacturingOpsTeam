@@ -1,5 +1,5 @@
 // Shared helpers: extract SQL from the design documents, build a fresh in-memory PGlite, load fictional base data.
-import { readFileSync } from 'node:fs';
+import { readFileSync, existsSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { PGlite } from '@electric-sql/pglite';
@@ -42,6 +42,9 @@ export function statements(block: string): string[] {
 }
 
 export function migrationSql(): string {
+  // Prefer the real migration file (netlify/database/migrations/0001_core_schema); fall back to the doc block.
+  const real = fileURLToPath(new URL('../../../netlify/database/migrations/0001_core_schema/migration.sql', import.meta.url));
+  if (existsSync(real)) return readFileSync(real, 'utf8');
   const blocks = sqlBlocks(docFile('data-model', 'migrations-plan.md'), /^## 3\. 0001_core_schema/);
   if (blocks.length !== 1) throw new Error(`expected exactly one 0001 block, got ${blocks.length}`);
   if (!blocks[0].includes('0001_core_schema')) throw new Error('0001 block header missing');
