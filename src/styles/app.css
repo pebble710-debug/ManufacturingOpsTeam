@@ -36,8 +36,13 @@ body {
   font-size: var(--font-size-200);
   line-height: var(--line-height-body);
   min-height: 100vh;
+  min-height: 100dvh;
+  display: flex;                 /* footer sticks to the bottom on short pages */
+  flex-direction: column;
   overflow-wrap: break-word;
 }
+body > .app-shell, body > main, body > .auth-page { flex: 1 0 auto; }
+.auth-page, .app-body > .main { flex: 1 0 auto; }
 
 h1, h2, h3, h4, h5, h6, p, ul, ol, dl, dd, figure, blockquote { margin: 0; }
 ul, ol { padding: 0; }
@@ -132,8 +137,9 @@ code, kbd, samp, .mono { font-family: var(--font-mono); font-size: 0.95em; }
 /* =====================================================================
    4. App shell
    ===================================================================== */
-.app-shell { display: flex; flex-direction: column; min-height: 100vh; }
-.app-body { flex: 1 1 auto; display: block; min-width: 0; }
+.app-shell { display: flex; flex-direction: column; min-height: 100vh; min-height: 100dvh; width: 100%; }
+.app-shell > main, .app-shell > .auth-page { flex: 1 0 auto; }
+.app-body { flex: 1 0 auto; display: block; min-width: 0; }
 
 /* 4.1 DEMO banner (real text, first element in <header>, not sticky) */
 .demo-banner {
@@ -229,10 +235,11 @@ code, kbd, samp, .mono { font-family: var(--font-mono); font-size: 0.95em; }
   content: "";
   width: 0.6rem; height: 0.6rem;
   border-right: 3px solid currentColor; border-bottom: 3px solid currentColor;
-  transform: rotate(45deg) translateY(-2px);
+  transform: rotate(-45deg);          /* closed: points right */
   transition: transform 0.15s;
 }
-.nav-disclosure[open] > summary::after { transform: rotate(-135deg) translateY(-2px); }
+.nav-disclosure[open] > summary::after { transform: rotate(45deg); }   /* open: points down */
+.nav-disclosure[open] > summary { border-bottom: 3px solid var(--color-primary); }
 
 .site-nav { padding: var(--space-2) 0 var(--space-4); }
 .site-nav ul { list-style: none; margin: 0; padding: 0; }
@@ -304,6 +311,15 @@ code, kbd, samp, .mono { font-family: var(--font-mono); font-size: 0.95em; }
 /* Auth (login) page */
 .auth-page { display: flex; justify-content: center; padding: var(--space-5) var(--space-4); }
 .auth-card { width: 100%; max-width: 28rem; }
+/* Small screens: use the full width and compact the demo-accounts table */
+@media (max-width: 39.999rem) {
+  .auth-page { padding: var(--space-3) var(--space-2); }
+  .auth-card { max-width: none; padding: var(--space-3); }
+  .auth-card .table { font-size: var(--font-size-100); }
+  .auth-card .table th, .auth-card .table td { padding: var(--space-2); }
+  .auth-card .table-wrap { margin-inline: calc(var(--space-1) * -1); }
+}
+@media (min-width: 40rem) { .auth-card--wide { max-width: 40rem; } }   /* optional: card holding the accounts table */
 
 /* =====================================================================
    5. Typography
@@ -477,7 +493,8 @@ h4 { font-size: var(--font-size-300); }
 .page-header__actions { display: flex; flex-wrap: wrap; gap: var(--space-2); }
 
 .breadcrumb { margin-bottom: var(--space-2); font-size: var(--font-size-100); }
-.breadcrumb ol { list-style: none; display: flex; flex-wrap: wrap; gap: 0 var(--space-2); }
+.breadcrumb ol { list-style: none; display: flex; flex-wrap: wrap; align-items: center; gap: 0 var(--space-2); }
+.breadcrumb li { display: flex; align-items: center; min-height: var(--size-target-min); }
 .breadcrumb li + li::before { content: ">"; margin-right: var(--space-2); color: var(--color-text-muted); }
 .breadcrumb a { display: inline-flex; align-items: center; min-height: var(--size-target-min); }
 .breadcrumb [aria-current="page"] { color: var(--color-text-muted); }
@@ -650,6 +667,9 @@ h4 { font-size: var(--font-size-300); }
   border-radius: var(--radius-sm);
   cursor: pointer;
 }
+/* A lone checkbox lines up with the field edge (no extra left padding); hover tint keeps a small inset */
+.check { padding-left: 0; margin-left: 0; }
+.check:hover { background: transparent; }
 .choice input, .check input {
   flex: none; width: 1.5rem; height: 1.5rem; margin: 0;
   accent-color: var(--color-primary);
@@ -697,7 +717,7 @@ h4 { font-size: var(--font-size-300); }
   border-left-width: 4px;
   border-radius: var(--radius-sm);
 }
-.alert__icon { flex: none; margin-top: 0.2em; }
+.alert__icon { flex: none; width: 1.25em; height: 1.25em; margin-top: 0.125em; vertical-align: top; }   /* centers on the first text line (1.5 line-height) */
 .alert__body > * + * { margin-top: var(--space-2); }
 .alert__lead { font-weight: var(--font-weight-bold); }
 .alert a { color: inherit; font-weight: var(--font-weight-semibold); }
