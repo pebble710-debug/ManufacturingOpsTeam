@@ -1,11 +1,10 @@
 // Admin: audit log viewer (E-51) and demo reset (E-52, Matrix R-9).
 import type { Sql } from '../db';
-import { audit } from '../audit';
 import { realNow } from '../clock';
-import { isDemoResetEnabled } from '../env';
-import { HttpError, conflict, validation } from '../http/errors';
+import { appEnv, isDemoResetEnabled } from '../env';
+import { HttpError, validation } from '../http/errors';
 import { dateParam, intParam, pagination, parseQuery } from '../validation/common';
-import { inTx, type Actor } from './common';
+import type { Actor } from './common';
 
 type Row = Record<string, any>;
 
@@ -47,19 +46,6 @@ const COOLDOWN_MS = 10 * 60 * 1000;
 const BUSINESS_TABLES = ['app_user', 'session', 'login_attempt', 'audit_log', 'customer', 'supplier', 'carrier', 'part', 'location', 'reason_code', 'lot', 'shipment', 'shipment_line',
   'packaging_error', 'rework_event', 'corrective_action', 'shipment_status_history', 'shipment_verification', 'receipt', 'cycle_count', 'cycle_count_line', 'inventory_transaction'];
 
-type SeedFn = (tx: Sql) => Promise<Record<string, number> | void>;
-const seedModules = import.meta.glob<Record<string, unknown>>('../seed/{index,load,run}.ts');
-
-async function findSeed(): Promise<SeedFn | null> {
-  for (const load of Object.values(seedModules)) {
-    const mod = await load();
-    for (const name of ['seedDemoData', 'resetAndSeed', 'seedDatabase', 'runSeed', 'seed']) {
-      if (typeof mod[name] === 'function') return mod[name] as SeedFn;
-    }
-  }
-  return null;
-}
-
 export async function demoReset(sql: Sql, user: Actor, input: { confirm: string }) {
   if (!isDemoResetEnabled()) throw new HttpError(404, 'FEATURE_DISABLED', 'Not found.');
   if (input.confirm !== 'RESET DEMO DATA') throw validation({ confirm: 'type RESET DEMO DATA exactly' });
@@ -69,22 +55,15 @@ export async function demoReset(sql: Sql, user: Actor, input: { confirm: string 
   if (!Number.isNaN(lastMs) && now.getTime() - lastMs < COOLDOWN_MS) {
     throw new HttpError(429, 'RESET_COOLDOWN', 'The demo was reset recently. Try again later.', { headers: { 'Retry-After': String(Math.ceil((COOLDOWN_MS - (now.getTime() - lastMs)) / 1000)) } });
   }
-  const seed = await findSeed();
-  if (!seed) throw new HttpError(503, 'SERVICE_UNAVAILABLE', 'The demo seed is not available in this build.');
-  // (1) audit first, in its own committed transaction (records failed attempts too)
-  await sql.begin(async (tx) => audit(tx as unknown as Sql, { userId: user.id, action: 'DEMO_RESET', table: 'setting', changes: { phase: 'started' } }));
   const started = Date.now();
-  const counts = await inTx(sql, async (tx) => {
-    const [lock] = await tx<{ ok: boolean }[]>`SELECT pg_try_advisory_xact_lock(hashtextextended('demo-reset', 0)) AS ok`;
-    if (!lock.ok) throw conflict('RESET_IN_PROGRESS', 'A demo reset is already running.');
-    await tx`TRUNCATE app_user, session, login_attempt, audit_log, customer, supplier, carrier, part, location, reason_code, lot, shipment, shipment_line, packaging_error,
-             rework_event, corrective_action, shipment_status_history, shipment_verification, receipt, cycle_count, cycle_count_line, inventory_transaction RESTART IDENTITY CASCADE`;
-    await tx`UPDATE setting SET value = default_value WHERE scope = 'config'`;
-    const c = (await seed(tx)) ?? {};
-    await tx`UPDATE setting SET value = ${now.toISOString()} WHERE key = 'last_demo_reset_at'`;
-    const [admin] = await tx<{ id: string }[]>`SELECT id FROM app_user WHERE id = ${user.id}`;
-    await audit(tx, { userId: admin ? Number(admin.id) : null, action: 'DEMO_RESET', table: 'setting', changes: { phase: 'completed', actor: user.username } });
-    return c;
+  // One implementation: the seed library truncates, reseeds, sets last_demo_reset_at and writes the
+  // DEMO_RESET audit row in a single transaction (seed-plan §12; ADR-003 D-13 credential rules).
+  const { resetAndSeed } = await import('../seed/index');
+  const summary = await resetAndSeed(sql, {
+    remote: appEnv() === 'deployed',
+    env: process.env,
+    nowIso: now.toISOString(),
+    actorUserId: user.id,
   });
-  return { reset: true, duration_ms: Date.now() - started, counts, tables: BUSINESS_TABLES.length };
+  return { reset: true, duration_ms: Date.now() - started, counts: (summary as { counts?: unknown }).counts ?? {}, tables: BUSINESS_TABLES.length };
 }
