@@ -1,7 +1,8 @@
 # ADR-003: Authentication, sessions, CSRF and the request pipeline
 
-Status: **Proposed** (2026-11-26). Next step: review by security-reviewer (Sasha), wave W1.5. Nobody
-implements `src/lib/auth/**` or `src/middleware.ts` until the Orchestrator relays acceptance.
+Status: **Accepted — reviewed by security-reviewer (Sasha) 2026-11-27, approved for implementation**
+(binding conditions in §8; review report `docs/security/review-2026-11-27-design.md`, task T-027).
+Proposed 2026-11-26.
 Date: 2026-11-26   Author: software-architect (Marcus)   Task: T-022 (W1), part A (formerly T-009)
 Builds on: [ADR-001](../ADR-001.md) §5 and §8 (accepted conditionally) · [security-plan.md](../security/security-plan.md)
 §3–§5, §8, §9, §11 · [api/contract.md](../api/contract.md) §1.2, §1.3, §1.8, §1.12, E-02–E-04, E-52 ·
@@ -283,11 +284,12 @@ export const PERMISSIONS = {
   'shipment.write':        { matrix: 'P-04', roles: ['Supervisor', 'Shipping'] },
   'shipment.mark-ready':   { matrix: 'P-05', roles: ['Supervisor', 'Shipping'] },
   'shipment.start-packing':{ matrix: 'P-06', roles: ['Supervisor', 'Shipping'] },
-  'shipment.reopen':       { matrix: 'UD-4', roles: ['Supervisor', 'Quality'] },   // matrix row pending (Priya)
+  'shipment.reopen':       { matrix: 'P-26', roles: ['Supervisor', 'Quality'] },   // UD-4, R-15 [Sasha T-027: matrix row now exists]
   'shipment.verify':       { matrix: 'P-07', roles: ['Supervisor', 'Shipping', 'Quality'] },   // + R-1
   'shipment.ship':         { matrix: 'P-08', roles: ['Supervisor', 'Shipping'] },
-  'shipment.correct':      { matrix: 'UD-3', roles: ['Supervisor'] },               // matrix row pending (Priya)
-  // … P-09 … P-25 exactly as permissions-matrix §2; error.contain = P-14 (Supervisor, Quality; UD-4)
+  'shipment.correct':      { matrix: 'P-28', roles: ['Supervisor'] },               // UD-3, R-14 [Sasha T-027]
+  // … P-09 … P-25 exactly as permissions-matrix §2; 'error.contain' = P-27 (Supervisor, Quality; UD-4, R-15);
+  // 'resources.read' = P-29 (ALL_ROLES). ALL_ROLES = the six roles incl. Viewer. [Sasha T-027 correction]
 } as const satisfies Record<string, { matrix: string; roles: readonly Role[] }>;
 ```
 
@@ -336,7 +338,7 @@ hints use:
 | Rule | Predicate (row read under lock) | Refusal |
 |------|----------------------------------|---------|
 | R-1 verifier ≠ packer | `shipment.packed_by <> me` (the current packer, set by `start-packing` **and** `reopen`) | 403 `VERIFIER_SAME_AS_PACKER`; no verification row |
-| R-4 + **UD-2** approver independent | no line with `counted_by = me OR recounted_by = me`, **and** `cycle_count.submitted_by <> me` | 403 `APPROVER_SAME_AS_COUNTER` (`details.reason` = `counted` \| `recounted` \| `submitted`) |
+| R-4 + **UD-2** approver independent | no line with `counted_by = me OR recounted_by = me`, **and** `cycle_count.submitted_by <> me` | 403 `APPROVER_SAME_AS_COUNTER` (`details.reason` = `counted` \| `recounted`) or 403 `APPROVER_SAME_AS_SUBMITTER` (matrix §1 step 5, T-26) *[Sasha T-027 correction: separate code to match the matrix]* |
 | R-5 Shipping cancels early only | `role <> 'Shipping' OR status IN ('Planned','Ready to Pack')` | 403 `FORBIDDEN_CANCEL_AT_STATUS` |
 | R-7 Hold moves | `source.type` from `location` (DB); Receiving with a Hold source → refuse; Quality without Hold at source/destination, or PRODUCTION_COMPLETE → refuse | 403 `FORBIDDEN_HOLD_RELEASE` / `FORBIDDEN_NON_HOLD_TXN` |
 | R-8 after-ship errors | `role <> 'Shipping' OR (stage = 'Before ship' AND status <> 'Shipped')` | 403 `FORBIDDEN_AFTER_SHIP_ERROR` |
@@ -401,6 +403,13 @@ local signal:
   `scripts/migrate.ts`, and `vitest.config.ts` `test.env`.
 
 **Every other case is `'deployed'`**, including Netlify Functions, `netlify serve`, and an unknown runtime.
+
+*[Sasha T-027 correction, binding]* **The seed's credential branch is decided by the target database, not
+only by `appEnv()`.** `scripts/reset-seed.ts` sets `APP_ENV=local`, but the first production seed is that
+same script run with `--remote` (ADR-002 §7). Therefore: when the seed runs with `--remote` (or against any
+non-local host), it **must use the `'deployed'` column of the table below** (Admin from
+`DEMO_ADMIN_PASSWORD` or inactive), whatever `appEnv()` says. Implement it as one function, e.g.
+`seedCredentialMode({ remote }) → 'local' | 'deployed'`, with a unit test (S-30).
 As a second guard, `APP_ENV=local` is **ignored** when any Netlify runtime marker is present (`NETLIFY`,
 `SITE_ID`, `DEPLOY_ID`, `CONTEXT`) [A: which of these are present at Function run time is not verified;
 docs.netlify.com was not reachable from this session]. The safe default means an unverified variable
@@ -486,3 +495,35 @@ throttled `last_seen_at` update and opportunistic deletes of expired rows.
 | Function limits (1024 MB default memory, 60 s synchronous) | ADR-001 F3 (Netlify docs, accessed 2026-11-25) | [R] |
 | Netlify runtime environment variable names at Function run time | **Not verified:** docs.netlify.com did not resolve from this session (it must be allowed in the session network settings). D-13 is designed to be safe without it. | [A] |
 | Safari rejects `Secure` cookies on `http://localhost`; Chromium and Firefox accept them | Not verified in this session | [A] |
+
+## 8. Security review (security-reviewer, Sasha, 2026-11-27, T-027)
+
+**Verdict: APPROVED for implementation**, with the corrections tagged *[Sasha T-027]* above and the binding
+conditions below. Full findings: [review-2026-11-27-design.md](../security/review-2026-11-27-design.md).
+
+Answers to §6: **A3-1** accept the 5-minute `last_seen_at` throttle (25–30 min effective idle). **A3-2**
+16 characters minimum is enough; no character-class rule. The user generates the value randomly (for example
+`openssl rand -base64 24`) and stores it only in the Netlify UI. **A3-3** stays with Theo; the design is
+fail-safe in the meantime. **A3-4** accept the `Sec-Fetch-Site` refinement. `Origin: null` must be refused
+(it never equals the site origin).
+
+Binding conditions (Diego unless stated otherwise; Quinn tests them):
+
+| # | Condition |
+|---|-----------|
+| C-1 | `siteOrigin` comes from `new URL(request.url).origin` (as Astro's `checkOrigin` does) or a fixed allow-list. It is **never** derived from the `Origin` or `Referer` header. |
+| C-2 | `DUMMY_HASH` uses exactly `SCRYPT_PARAMS`. If the D-2 fallback parameters are adopted, regenerate it in the same change, so unknown-user timing stays equal (S-11). |
+| C-3 | Seed credential mode follows the target DB (D-13 correction). A `--remote` seed never gives `demo.admin` the published local password. Test it. |
+| C-4 | `APPROVER_SAME_AS_SUBMITTER` is a separate 403 code (D-10 correction). Marcus adds it to contract §1.4/§1.3 step 5 and E-40. |
+| C-5 | `PERMISSIONS` uses the matrix ids P-26 to P-29. `ALL_ROLES` includes Viewer. S-01 compares every row, including P-26 to P-29. |
+| C-6 | Exactly **one** CSP value: a shared constant used by middleware, and `netlify.toml` set to the same string (Theo removes `'unsafe-inline'` from `style-src`, see ADR-002 §10). Any relaxation needs my written acceptance (D-12 fallback). |
+| C-7 | Steps 0–3 fail closed (as D-9). `ACCESS_DENIED` and `LOGIN_FAILED` rows never contain the password, the tokens, the CSRF values, the IP or a raw unknown username (D-14). Add a grep or unit test on the audit payloads. |
+| C-8 | The `next` redirect check also refuses control characters and percent-encoded `/` or `\` after decoding. Test `//evil.example`, `/\evil.example`, `/%2F%2Fevil.example` and `https://evil.example`. |
+| C-9 | No bootstrap or first-run endpoint, ever, without a new security review (ADR-002 §7 risk 1). |
+| C-10 | Contract change for Marcus: remove the E-08 exception "a Supervisor sending only `notes`" on Shipped or Cancelled shipments (contract E-08 notes). It contradicts R-14 (notes are locked; P-28 correction only). |
+
+Accepted residual risks (Low): login CSRF into a published demo account (O-3); per-(username, IP) limit means
+a distributed guesser is limited only per IP, which is acceptable because the only unpublished password is
+random and ≥ 16 characters; a signed-in visitor can create `ACCESS_DENIED` rows (the optional PD-5 write cap
+stays a "Should"); scrypt CPU spent per failed login inside the 30-per-client window (credit risk, PD-7 watch).
+

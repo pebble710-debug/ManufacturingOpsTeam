@@ -1,6 +1,6 @@
 # ADR-002: Hosting, deployment, CI and Free-plan credit protection
 
-- **Status:** Proposed (2026-11-26). Sasha (security-reviewer) reviews next; Marcus co-owns the architecture fit.
+- **Status:** Accepted — reviewed by security-reviewer (Sasha) 2026-11-27, approved for implementation (binding conditions in §14; corrections tagged *[Sasha T-027]*). Proposed 2026-11-26; Marcus co-owns the architecture fit.
 - **Author:** Theo (devops-engineer), task T-024 · **Depends on:** `docs/ADR-001.md` (§5, §5.1, §15), `docs/poc/poc-report.md`
 - **Scope:** how the v1 app is built, checked, deployed and rolled back on **one Netlify Free-plan site**. Fictional data only.
 - **Tags:** [R] researched/verified locally in this repo · [A] assumption, not verifiable from the sandbox (Netlify docs
@@ -47,7 +47,7 @@ Blobs; `scripts/lint.mjs` bans `Astro.session`. Confirm on the usage page that B
 | `NODE_VERSION` | `netlify.toml` | Build Node = `22.23.5` | Must equal `.nvmrc` |
 | `NPM_FLAGS` | `netlify.toml` | `--no-audit --no-fund` (faster build) | Optional |
 | `DEMO_RESET_ENABLED` | `netlify.toml` per context = `false`; the user may override in the UI | Enables Admin-only `POST /api/v1/admin/demo-reset` | Default off everywhere. Turn on only for a class demo, then off again (§7) |
-| `DEMO_ADMIN_PASSWORD` | Netlify UI (secret) | Demo-only password used by the seed for the seeded demo Admin (and optionally all demo users) | Fictional, demo-only, never reuse. If unset, the seed must use its documented demo default and say so (Dana) |
+| `DEMO_ADMIN_PASSWORD` | Netlify UI only, marked **secret**, scope **Functions runtime**, context **Production** only; also exported in the user's shell for the one-time `--remote` seed | Password of `demo.admin` **only** on the deployed site (ADR-003 D-13) | Random, ≥ 16 characters, never published or reused. *[Sasha T-027 correction]* **If unset or shorter than 16 characters, `demo.admin` is created inactive** (no documented default on any non-local database). The six other demo users always use their published passwords |
 | `AWS_LAMBDA_JS_RUNTIME` | Only if the first deploy shows a Node mismatch | Aligns function runtime with build Node | ADR-001 §5 [A] |
 
 `.env.example` lists the same names with fake values. `.env` is git-ignored (`.env.*` except `.env.example`).
@@ -106,7 +106,7 @@ unset NETLIFY_DB_URL
 
 Requirements for Dana's `scripts/reset-seed.ts`: reuse the host guard (refuse non-local unless `--remote`), print the host (not the password) and the row counts, and run in one transaction.
 Risks: (1) the hosted DB may not accept connections from outside Netlify [A]; if so, fall back to B with a temporary `DEMO_RESET_ENABLED=true` plus a one-time bootstrap
-(Marcus/Diego decide whether a first-run bootstrap admin is acceptable; that would be an ADR-003 matter, not decided here). (2) Network round trips: about 12 batches plus begin/commit, so expect a few seconds [A].
+(Marcus/Diego decide whether a first-run bootstrap admin is acceptable; that would be an ADR-003 matter, not decided here). *[Sasha T-027]* Any bootstrap path needs a new security review before it is built; an unauthenticated or GET bootstrap endpoint is not acceptable. (2) Network round trips: about 12 batches plus begin/commit, so expect a few seconds [A].
 
 ## 8. Deploy-preview and credit policy (Free plan: 300 credits/month, hard stop) [A: rates from ADR-001 F8]
 
@@ -138,7 +138,7 @@ Local-first: all development and tests use the emulator and `@netlify/database-d
 
 | Header | Value | Why |
 |---|---|---|
-| Content-Security-Policy | `default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; upgrade-insecure-requests` | Chart.js is bundled from npm, so no CDN. `astro.config.mjs` sets `build.inlineStylesheets: 'never'` and `vite.build.assetsInlineLimit: 0`, so scripts and styles are external files and **no inline script is needed or allowed**. `style-src` keeps `'unsafe-inline'` only so inline `style=""` attributes do not break pages; tightening it is a follow-up for Maya/Felix/Sasha (Chart.js sets styles through the CSSOM, which CSP allows) |
+| Content-Security-Policy | *[Sasha T-027 correction: `style-src 'self'`, no `'unsafe-inline'`, identical to ADR-003 D-12]* `default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; upgrade-insecure-requests` | Chart.js is bundled from npm, so no CDN. `astro.config.mjs` sets `build.inlineStylesheets: 'never'` and `vite.build.assetsInlineLimit: 0`, so scripts and styles are external files and **no inline script is needed or allowed**. `style-src` keeps `'unsafe-inline'` only so inline `style=""` attributes do not break pages; tightening it is a follow-up for Maya/Felix/Sasha (Chart.js sets styles through the CSSOM, which CSP allows) |
 | X-Frame-Options | `DENY` | legacy clickjacking guard alongside `frame-ancestors 'none'` |
 | X-Content-Type-Options | `nosniff` | |
 | Referrer-Policy | `strict-origin-when-cross-origin` | |
@@ -200,3 +200,19 @@ Do these in the Netlify and GitHub UIs. Nothing is done for you, and nothing sho
 | O5 | Hosted checks (ADR-001 §12.1 items 4 to 7, 9): redeploy persistence, cold start, remote seed timing, credit read | Theo after user approval |
 | O6 | `reset-seed.ts` must honor `--remote` guard and be transactional | Dana |
 | O7 | Accept-and-track decision for the 10 moderate advisories | Sasha |
+
+## 14. Security review (security-reviewer, Sasha, 2026-11-27, T-027)
+
+**Verdict: APPROVED for implementation**, with the corrections tagged *[Sasha T-027]* above and these binding
+conditions. Findings: [review-2026-11-27-design.md](../security/review-2026-11-27-design.md).
+
+| # | Condition | Owner |
+|---|-----------|-------|
+| H-1 | `netlify.toml` CSP = the ADR-003 D-12 string (remove `'unsafe-inline'` from `style-src`; keeping `upgrade-insecure-requests` is fine). Add `X-Robots-Tag: noindex, nofollow`. Middleware and `netlify.toml` share one value (a test compares them). The UI already bans `style=` attributes (ADR-003 D-12 grep), so nothing needs inline styles. | Theo, Diego |
+| H-2 | Deploy previews and branch deploys stay **off**. If previews are ever turned on (user approval), **never for fork PRs**, and `DEMO_ADMIN_PASSWORD` stays scoped to Production only. | Theo, user |
+| H-3 | CI uses `pull_request`, never `pull_request_target`; `permissions: contents: read`; no repo secrets except an optional gitleaks licence. Pinning actions to commit SHAs is Low and can follow. | Theo |
+| H-4 | `DEMO_RESET_ENABLED`: the code treats only the exact string `true` as on (ADR-003 D-13). Which source wins at Function runtime (the `netlify.toml` context value or the UI value) is [A]. On the first deploy, check that `POST /api/v1/admin/demo-reset` returns 404 and record the result in the evidence log. | Theo |
+| H-5 | The remote seed and migrate scripts never print the connection string or `DEMO_ADMIN_PASSWORD`, and refuse a non-local host without `--remote`. With `--remote`, the seed uses the deployed credential mode (ADR-003 D-13 correction). | Dana, Diego |
+| H-6 | Advisories: the 10 moderate findings (GHSA-3g3m-2fjr-6pw4 glob, GHSA-g3hv-75wg-m249 minimatch, through `@astrojs/netlify` → `@netlify/*` build and dev tooling) are **accepted and tracked** (build-time only, no attacker-controlled glob input; the only "fix" is a breaking downgrade to adapter 6.x, which is rejected). Re-check at every dependency bump and before release; any high or critical still blocks. | Theo, Sasha |
+| H-7 | `.npmrc legacy-peer-deps=true` is accepted for now (Low). Remove it when the adapter's peer range allows. | Theo |
+

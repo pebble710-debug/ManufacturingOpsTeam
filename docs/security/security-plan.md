@@ -282,7 +282,7 @@ Critical/High findings block release until re-verified (security-review-checklis
 
 | # | Item | Owner |
 |---|------|-------|
-| O-1 | ADR-003: confirm scrypt parameters after measuring in the function, session timeouts, login-form CSRF approach, client-IP header name | Marcus + Sasha (T-009) |
+| O-1 | **Answered by ADR-003 (accepted 2026-11-27, T-027)**: timeouts, login-form CSRF (O-3a), client IP (`context.clientAddress`). Still open: the scrypt timing measurement on the first hosted deploy (T-018) | Marcus + Sasha |
 | O-2 | API contract: error codes and response order from permissions-matrix §1 | Diego + Marcus |
 | O-3 | Astro 7.x CSP support vs. disabling inlining (§8.1) | Marcus / Felix, verify in build |
 | O-4 | Netlify fork-PR / sensitive-variable settings and password-protection plan availability (re-verify in the account UI) | Theo + user |
