@@ -65,6 +65,7 @@ export function toHttpError(e: unknown): HttpError {
   if (e instanceof HttpError) return e;
   const pg = e as PgErr;
   if (pg && typeof pg.code === 'string') {
+    if (process.env.DEBUG_DB) console.error('DB error', pg.code, pg.constraint_name, pg.message);
     if (pg.code === '23001') {
       // restrict_violation: append-only / lock triggers
       if (/locked/i.test(pg.message ?? '')) return new HttpError(409, 'SHIPMENT_LOCKED', 'This shipment is locked. Use the correction action.');

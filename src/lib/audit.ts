@@ -23,10 +23,10 @@ export function scrub(value: unknown): unknown {
 
 /** Insert one audit row using the caller's transaction (same commit as the change). */
 export async function audit(tx: Sql, e: AuditEntry): Promise<void> {
-  const changes = e.changes ? JSON.stringify(scrub(e.changes)) : null;
+  const changes = e.changes ? tx.json(scrub(e.changes) as never) : null;
   await tx`INSERT INTO audit_log (user_id, action, table_name, record_id, changes)
            VALUES (${e.userId == null ? null : Number(e.userId)}, ${e.action}, ${e.table ?? null},
-                   ${e.recordId == null ? null : String(e.recordId)}, ${changes}::jsonb)`;
+                   ${e.recordId == null ? null : String(e.recordId)}, ${changes})`;
 }
 
 /** ACCESS_DENIED in its own short transaction so it survives the aborted request (contract 1.8). */
