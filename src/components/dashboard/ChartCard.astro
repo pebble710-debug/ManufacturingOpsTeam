@@ -1,0 +1,36 @@
+---
+// Chart card (component-classes.md section 11): question title, text summary, canvas, legend, data table, link.
+// The chart config is JSON in a data-* attribute; src/scripts/charts.ts draws it (no inline scripts, CSP).
+interface Props {
+  id: string; title: string; summary: string; config: unknown; wide?: boolean;
+  legend: { label: string; kind: 'line' | 'bar' | 'target' | 'cum' | 'line2' }[];
+  table: { columns: { key: string; label: string }[]; rows: Record<string, unknown>[] };
+  actionHref: string; actionLabel: string; caption?: string; empty?: boolean;
+}
+const { id, title, summary, config, wide = false, legend, table, actionHref, actionLabel, caption, empty = false } = Astro.props;
+const cell = (v: unknown) => (v === null || v === undefined ? '—' : String(v));
+---
+<section class:list={['chart-card', { 'chart-card--wide': wide }]} aria-labelledby={`${id}-t`}>
+  <h2 class="chart-card__title" id={`${id}-t`}>{title}</h2>
+  <p class="chart-card__summary">{summary}</p>
+  {caption && <p class="text-muted">{caption}</p>}
+  {empty
+    ? <p class="chart-card__nodata">No data for this period.</p>
+    : <div class="chart-card__canvas"><canvas id={id} role="img" aria-label={summary} data-chart={JSON.stringify(config)}></canvas></div>}
+  {!empty && (
+    <ul class="chart-legend">
+      {legend.map((l) => <li><span class={l.kind === 'line' ? 'legend-swatch' : `legend-swatch legend-swatch--${l.kind}`}></span> {l.label}</li>)}
+    </ul>
+  )}
+  <details class="chart-data disclosure" open>
+    <summary>View data table</summary>
+    <div class="chart-data__table-wrap">
+      <table class="table table--compact">
+        <caption class="visually-hidden">{title}</caption>
+        <thead><tr>{table.columns.map((c) => <th scope="col">{c.label}</th>)}</tr></thead>
+        <tbody>{table.rows.map((r) => <tr>{table.columns.map((c, i) => (i === 0 ? <th scope="row">{cell(r[c.key])}</th> : <td>{cell(r[c.key])}</td>))}</tr>)}</tbody>
+      </table>
+    </div>
+  </details>
+  <div class="chart-card__actions"><a class="btn btn--secondary" href={actionHref}>{actionLabel}</a></div>
+</section>

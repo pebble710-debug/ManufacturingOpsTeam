@@ -1,0 +1,98 @@
+---
+// S02 Dashboard (ui-spec). Server renders tiles, summaries and data tables from the KPI module; charts.ts draws the canvases.
+import AppLayout from '../layouts/AppLayout.astro';
+import PageHeader from '../components/PageHeader.astro';
+import Icon from '../components/Icon.astro';
+import KpiTile from '../components/dashboard/KpiTile.astro';
+import ChartCard from '../components/dashboard/ChartCard.astro';
+import { appLocals, formatReportingDate } from '../components/locals';
+import { getSql } from '../lib/db';
+import { addDays, getChart, getKpis, KpiParamError, makePeriod, previousPeriod } from '../lib/kpi';
+import { parseParams, resolveBusinessToday } from '../lib/kpi/http';
+
+export const prerender = false;
+
+const { user, reportingDate } = appLocals(Astro.locals);
+if (!user) return Astro.redirect('/login?reason=required&next=/dashboard');
+
+const sql = getSql();
+const today = await resolveBusinessToday(reportingDate, sql);
+const params = parseParams(Astro.url.searchParams, today);
+let kpiData: Awaited<ReturnType<typeof getKpis>> | null = null;
+let c1: any, c2: any, c3: any;
+let errors: Record<string, string> = {};
+try {
+  kpiData = await getKpis(params, sql);
+  const g = Astro.url.searchParams.get('granularity');
+  c1 = await getChart('C1', params, sql);
+  c2 = await getChart('C2', params, sql);
+  c3 = await getChart('C3', params, sql);
+  if (!g && c2.suggested_granularity === 'week') c2 = await getChart('C2', { ...params, granularity: 'week' }, sql);
+} catch (e) {
+  if (e instanceof KpiParamError) errors = e.fields; else throw e;
+}
+if (Object.keys(errors).length) Astro.response.status = 422;
+
+const period = kpiData?.period ?? makePeriod(addDays(today, -29), today);
+const prev = previousPeriod(period);
+const basis = kpiData?.basis ?? 'promise';
+const basisLabel = basis === 'promise' ? 'promise date' : 'requested date';
+const tiles = kpiData ? kpiData.kpis.filter((k) => k.tile) : [];
+const preset = (n: number) => `/dashboard?from=${addDays(today, -(n - 1))}&to=${today}&basis=${basis}`;
+const longDate = (d: string) => formatReportingDate(d);
+const q = `from=${period.from}&to=${period.to}`;
+---
+<AppLayout title="Dashboard" description="Shipping and inventory KPIs for the Riverton plant (fictional demo data).">
+  <PageHeader title="Dashboard" />
+  <p class="reporting-date"><Icon name="calendar" />
+    <span><span class="reporting-date__title">{kpiData ? kpiData.reporting.label : `Reporting as of ${longDate(today)} — demonstration data`}</span><br />
+    <span class="reporting-date__note">Fixed demo date: KPIs, "overdue" and default dates use this date, not today's date.</span></span></p>
+
+  <form class="filter-bar" method="get" role="search" aria-label="Dashboard period">
+    <div class="filter-bar__fields">
+      <div class="field"><label for="from">From</label>
+        <input id="from" name="from" type="date" value={period.from} required aria-invalid={errors.from ? 'true' : undefined} aria-describedby={errors.from ? 'from-err' : undefined} />
+        {errors.from && <p class="field__error" id="from-err">{errors.from === 'from must not be after to' ? "From date can't be after the To date." : errors.from}</p>}</div>
+      <div class="field"><label for="to">To</label>
+        <input id="to" name="to" type="date" value={period.to} required aria-invalid={errors.to ? 'true' : undefined} aria-describedby={errors.to ? 'to-err' : undefined} />
+        {errors.to && <p class="field__error" id="to-err">{errors.to}</p>}</div>
+      <fieldset class="field"><legend>On-time measured against</legend>
+        <label><input type="radio" name="basis" value="promise" checked={basis === 'promise'} /> Promise date</label>{' '}
+        <label><input type="radio" name="basis" value="requested" checked={basis === 'requested'} /> Requested date</label></fieldset>
+    </div>
+    <div class="filter-bar__actions">
+      <button class="btn btn--primary" type="submit">Apply</button>
+      <a class="btn btn--link" href={preset(7)}>Last 7 days</a>
+      <a class="btn btn--link" href={preset(30)}>Last 30 days</a>
+      <a class="btn btn--link" href={preset(90)}>Last 90 days</a>
+      <span class="text-muted">Compared with {longDate(prev.from)} – {longDate(prev.to)}</span>
+    </div>
+  </form>
+
+  {kpiData ? (
+    <>
+      <h2 class="visually-hidden">Key measures</h2>
+      <div class="kpi-grid">{tiles.map((k) => <KpiTile kpi={k} basisLabel={basisLabel} />)}</div>
+
+      <div class="chart-grid">
+        <ChartCard id="c1" title="Are we shipping on time, and which way is it trending?" summary={c1.summary} empty={c1.overall.denominator === 0}
+          legend={[{ label: 'On-time %', kind: 'line' }, { label: `Target ${c1.target ?? ''} %`, kind: 'target' }]}
+          config={{ type: 'c1', labels: c1.series.map((s: any) => s.week), values: c1.series.map((s: any) => s.value), target: c1.target }}
+          table={c1.table} actionHref={`/shipments?status=Shipped&date_field=ship_date&${q}`} actionLabel="Open the shipments behind this chart" />
+        <ChartCard id="c2" title="Do packaging errors rise when volume rises?" summary={c2.summary} empty={c2.summary_totals.shipments === 0}
+          caption={c2.granularity === 'week' ? 'Shown by week because most days have fewer than 5 shipments.' : undefined}
+          legend={[{ label: 'Shipments shipped', kind: 'bar' }, { label: 'Packaging error rate %', kind: 'line2' }]}
+          config={{ type: 'c2', labels: c2.series.map((s: any) => s.date ?? s.week), shipments: c2.series.map((s: any) => s.shipments_shipped), rate: c2.series.map((s: any) => s.packaging_error_rate_pct) }}
+          table={c2.table} actionHref={`/shipments?status=Shipped&date_field=ship_date&${q}`} actionLabel="Open the shipments behind this chart" />
+        <ChartCard id="c3" wide title="Which few problems cause most packaging errors?" summary={c3.summary} empty={c3.total === 0}
+          caption="Errors are counted by the date they were found, so this total can differ from the error rate tile (which follows the ship date)."
+          legend={[{ label: 'Errors (count)', kind: 'bar' }, { label: 'Cumulative share %', kind: 'cum' }]}
+          config={{ type: 'c3', labels: c3.series.map((s: any) => s.category), counts: c3.series.map((s: any) => s.count), cumulative: c3.series.map((s: any) => s.cumulative_pct) }}
+          table={c3.table} actionHref={`/packaging-errors?${q}`} actionLabel="Open the packaging errors behind this chart" />
+      </div>
+    </>
+  ) : (
+    <p class="alert alert--error" role="alert">The dashboard could not use that period. Fix the dates above and apply again.</p>
+  )}
+  <script>import '../scripts/charts.ts';</script>
+</AppLayout>

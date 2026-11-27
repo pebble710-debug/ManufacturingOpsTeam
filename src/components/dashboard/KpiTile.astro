@@ -1,0 +1,39 @@
+---
+// KPI tile (component-classes.md section 4). Words carry the meaning; arrows are decorative.
+import Icon from '../Icon.astro';
+import type { KpiResult } from '../../lib/kpi';
+import { deltaText, subLine, targetText, unitText } from './format';
+interface Props { kpi: KpiResult; basisLabel?: string }
+const { kpi, basisLabel } = Astro.props;
+const nodata = kpi.value_1dp === null;
+const state = nodata ? 'nodata' : kpi.meets_target === null ? 'nodata' : kpi.meets_target ? 'meets' : 'misses';
+const trendClass = kpi.change_assessment === 'Better' ? 'better' : kpi.change_assessment === 'Worse' ? 'worse' : 'flat';
+const arrow = kpi.trend === 'Up' ? '▲' : kpi.trend === 'Down' ? '▼' : '▬';
+const id = `kpi-${kpi.kpi_id}`;
+---
+<section class={`kpi-tile kpi-tile--${state}`} aria-labelledby={id} data-kpi={kpi.key}>
+  <h3 class="kpi-tile__label" id={id}>{kpi.name}</h3>
+  {nodata
+    ? <p class="kpi-tile__value">No data</p>
+    : <p class="kpi-tile__value">{kpi.value_1dp!.toFixed(1)}<span class="kpi-tile__unit">{unitText(kpi)}</span></p>}
+  <p class="kpi-tile__target">{targetText(kpi)}</p>
+  {!nodata && kpi.meets_target !== null && (
+    <p class="kpi-tile__status">
+      {kpi.meets_target
+        ? <span class="badge badge--success"><Icon name="check" /> Meets target</span>
+        : <span class="badge badge--danger"><Icon name="error" /> Misses target</span>}
+    </p>
+  )}
+  {nodata
+    ? <p class="kpi-tile__delta kpi-tile__delta--flat">No data for this period</p>
+    : <p class={`kpi-tile__delta kpi-tile__delta--${trendClass}`}>{kpi.trend && <span class="kpi-tile__arrow" aria-hidden="true">{arrow} </span>}{deltaText(kpi)}</p>}
+  {!nodata && <p class="kpi-tile__sub text-muted">{subLine(kpi)}</p>}
+  <details class="kpi-tile__help disclosure">
+    <summary>How is this calculated?</summary>
+    <div class="kpi-tile__help-body">
+      <p>{kpi.definition}</p>
+      {basisLabel && (kpi.key === 'on_time_pct' || kpi.key === 'otif_pct') && <p>Measured against the {basisLabel}; tolerance {(kpi.extra as any).tolerance_days ?? 0} days.</p>}
+      {kpi.note && <p class="text-muted">{kpi.note}</p>}
+    </div>
+  </details>
+</section>
